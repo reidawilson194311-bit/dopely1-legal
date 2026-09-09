@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Dopely1 Uploader</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+  :root {
+    --bg: #f2f3f6; --surface: #ffffff; --ink: #1a1f28; --ink-soft: #565f6e;
+    --accent: #a8752b; --accent-ink: #7a5420; --line: #dcdfe6;
+    --shadow: 0 1px 2px rgba(26,31,40,.04), 0 8px 24px -12px rgba(26,31,40,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #12151b; --surface: #191d25; --ink: #e8eaee; --ink-soft: #9aa3b2; --accent: #dba455; --accent-ink: #eec585; --line: #2a2f3a; --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.5); }
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: 'IBM Plex Sans', system-ui, sans-serif; margin: 0; padding: 80px 24px; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { max-width: 480px; text-align: center; }
+  .mark { width: 72px; height: 72px; border-radius: 18px; background: #1c212b; color: #f2f3f6; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 28px; margin: 0 auto 24px; font-family: 'IBM Plex Sans', sans-serif; }
+  .mark span { color: var(--accent); }
+  h1 { font-size: 24px; margin: 0 0 10px; }
+  p { font-size: 15px; color: var(--ink-soft); line-height: 1.6; margin: 0 0 24px; }
+  .links { display: flex; gap: 12px; justify-content: center; font-family: 'IBM Plex Mono', monospace; font-size: 13px; }
+  a { color: var(--accent-ink); text-decoration: none; border: 1px solid var(--line); padding: 8px 14px; border-radius: 8px; background: var(--surface); box-shadow: var(--shadow); }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="mark">D<span>1</span></div>
+    <h1>Dopely1 Uploader</h1>
+    <p>A personal automation tool for scheduling and publishing short-form video clips to TikTok.</p>
+    <div class="links">
+      <a href="./terms.html">Terms of Service</a>
+      <a href="./privacy.html">Privacy Policy</a>
+    </div>
+  </div>
+</body>
+</html>
