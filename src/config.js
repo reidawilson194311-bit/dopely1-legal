@@ -123,8 +123,14 @@ export const config = {
         youtube: env('UNIPILE_ACCOUNT_YOUTUBE'),
       },
     },
-    /** Posts to schedule per run, per platform. */
+    /**
+     * Distinct videos to publish per run. Each one is cross-posted to every
+     * platform, so 2 here means 2 posts per account per day, not 6.
+     */
     perRun: num('PUBLISH_PER_RUN', 2),
+    /** Ramp up to this rate over `rampDays`, so a new account starts slow. */
+    rampTo: num('PUBLISH_RAMP_TO', 4),
+    rampDays: num('PUBLISH_RAMP_DAYS', 21),
     /** IANA timezone the slot table below is expressed in. */
     timezone: env('PUBLISH_TIMEZONE', 'America/New_York'),
     /** Local-time slots per platform, best-first. */

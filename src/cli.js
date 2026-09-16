@@ -14,6 +14,7 @@
  */
 import { config, applyCliOverrides } from './config.js';
 import { run, STAGES } from './machine.js';
+import { drain } from './skills/04-poster.js';
 import { getStore, TABLES } from './lib/store/index.js';
 import { hasFfmpeg, hasDrawtext, findFont } from './lib/video.js';
 
@@ -111,6 +112,7 @@ dopely1-shorts-machine - scrape, reword, design, post. 0 humans.
 
   machine run [--stages=research,write,design,post]
   machine research | write | design | post
+  machine drain     publish held posts whose slot is due (Unipile only)
   machine status
   machine doctor
 
@@ -132,6 +134,11 @@ async function main() {
   if (flags.limit) opts.limit = flags.limit;
   if (flags.platforms) opts.platforms = flags.platforms;
 
+  if (command === 'drain') {
+    const published = await drain({ platforms: flags.platforms || config.platforms });
+    if (!published.length) console.log('nothing due');
+    return 0;
+  }
   if (command === 'status') return (await status(), 0);
   if (command === 'doctor') return (await doctor()) ? 0 : 1;
 

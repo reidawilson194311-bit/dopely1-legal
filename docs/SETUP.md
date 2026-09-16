@@ -76,9 +76,11 @@ natively. You need `METRICOOL_USER_TOKEN`, `METRICOOL_USER_ID` and
 `METRICOOL_BLOG_ID` (the brand id). Set `PUBLISH_PROVIDER=metricool`.
 
 **Unipile** — `UNIPILE_API_KEY`, `UNIPILE_DSN` and one account id per platform.
-Unipile publishes immediately rather than scheduling, so anything dated in the
-future stays queued locally and goes out on a later run that reaches its slot.
-Set `PUBLISH_PROVIDER=unipile`.
+Set `PUBLISH_PROVIDER=unipile`. Unipile publishes immediately rather than
+scheduling, so a future-dated post is held as `queued` and released by
+`machine drain` when its slot comes due. The hourly cron runs that for you;
+if you run the machine yourself rather than on Actions, you need `machine
+drain` on a schedule too, or nothing queued will ever go out.
 
 Leave `PUBLISH_PROVIDER=none` to build a schedule without publishing — the
 `posts` table fills up and you can review it before wiring a provider.
