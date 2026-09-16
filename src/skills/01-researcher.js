@@ -13,6 +13,7 @@ import { runActor, actorInput } from '../lib/apify.js';
 import { normalize } from '../lib/normalize.js';
 import { pickWinners } from '../lib/score.js';
 import { fakeScrape } from '../lib/fixtures.js';
+import { reportBatch } from '../lib/batch.js';
 
 const log = logger('01-research');
 
@@ -31,6 +32,8 @@ export async function research({ platforms = config.platforms } = {}) {
   log.banner('SKILL 01 / THE RESEARCHER', 'It goes shopping.');
   const store = getStore();
   const all = [];
+  const errors = [];
+  let attempted = 0;
 
   for (const platform of platforms) {
     const handles = NICHE.seedAccounts[platform] || [];
@@ -38,6 +41,7 @@ export async function research({ platforms = config.platforms } = {}) {
       log.warn(`no seed accounts for ${platform}, skipping`);
       continue;
     }
+    attempted++;
     log.info(`scraping ${handles.length} ${platform} accounts`);
     let items = [];
     try {
@@ -45,6 +49,7 @@ export async function research({ platforms = config.platforms } = {}) {
     } catch (err) {
       // One platform failing must not cost us the other two.
       log.error(`${platform} scrape failed, continuing`, err.message);
+      errors.push(`${platform}: ${err.message}`);
       continue;
     }
     const posts = items
@@ -59,6 +64,10 @@ export async function research({ platforms = config.platforms } = {}) {
     log.info(`${platform}: ${items.length} items -> ${posts.length} usable posts`);
     all.push(...posts);
   }
+
+  // A platform that scraped fine but produced no winners is a normal quiet
+  // run. Every platform erroring is a broken stage.
+  reportBatch(log, { attempted, succeeded: attempted - errors.length, errors });
 
   const winners = pickWinners(all, {
     viralMultiple: config.research.viralMultiple,

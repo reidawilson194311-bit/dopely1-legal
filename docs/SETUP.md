@@ -97,6 +97,11 @@ Posting before scheduled posts appear publicly rather than as drafts.
 
 ## Running it
 
+A run exits non-zero if any stage fails, including a stage that attempted work
+and errored on every item — that case is deliberately distinguished from a
+stage that simply had nothing to do, so an unattended cron cannot report
+success while quietly producing nothing.
+
 ```bash
 node src/cli.js run                 # everything
 node src/cli.js research            # 01 only - weekly is plenty
@@ -106,8 +111,16 @@ node src/cli.js run --dry-run       # rehearse, no spend
 ```
 
 `.github/workflows/machine.yml` runs the researcher weekly and the
-write → design → post loop daily. Add the credentials as repository secrets and
-enable the workflow.
+write → design → post loop daily. Add the credentials as repository secrets.
+
+Until the secrets for a given stage set exist, the scheduled runs **skip
+themselves** with a notice rather than failing — otherwise every cron would
+fail and email you daily, which trains you to ignore the one notification that
+matters once the machine is live. A manual run with `dry_run` always proceeds,
+since it needs no credentials.
+
+The workflow uses the flat-file store by default. Set a `STORE_DRIVER`
+repository variable to `airtable` once your base exists.
 
 ## Cost shape
 

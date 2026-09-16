@@ -17,6 +17,7 @@ import { logger } from '../lib/log.js';
 import { getStore, TABLES } from '../lib/store/index.js';
 import { generateJSON, RefusalError } from '../lib/claude.js';
 import { newId, slug } from '../lib/id.js';
+import { reportBatch } from '../lib/batch.js';
 
 const log = logger('02-copy');
 
@@ -223,6 +224,7 @@ export async function write({ limit = config.copy.batchSize } = {}) {
 
   const recentTitles = (await store.list(TABLES.SCRIPTS, { limit: 25 })).map((s) => s.title);
   const written = [];
+  const errors = [];
 
   // NODE 2, ENGINE: rewrite + voice-match.
   for (const winner of winners) {
@@ -266,12 +268,14 @@ export async function write({ limit = config.copy.batchSize } = {}) {
         continue;
       }
       log.error(`failed on ${winner.id}`, err.message);
+      errors.push(err.message);
     }
   }
 
   // NODE 3, OUTPUT: the new copy table.
   if (written.length) await store.upsert(TABLES.SCRIPTS, written);
   log.info(`NODE 3 / OUTPUT: ${written.length} scripts written to ${store.driver}`);
+  reportBatch(log, { attempted: winners.length, succeeded: written.length, errors });
   return written;
 }
 

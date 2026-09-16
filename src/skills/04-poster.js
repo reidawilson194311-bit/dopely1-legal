@@ -13,6 +13,7 @@ import { logger } from '../lib/log.js';
 import { getStore, TABLES } from '../lib/store/index.js';
 import { nextSlots, formatLocal } from '../lib/schedule.js';
 import { newId } from '../lib/id.js';
+import { reportBatch } from '../lib/batch.js';
 import metricool from '../lib/publishers/metricool.js';
 import unipile from '../lib/publishers/unipile.js';
 
@@ -59,6 +60,7 @@ export async function post({ limit = config.post.perRun, platforms = config.plat
   );
 
   const scheduled = [];
+  const errors = [];
   for (const platform of platforms) {
     const slots = nextSlots(platform, renders.length, takenByPlatform.get(platform) || []);
     for (const [i, render] of renders.entries()) {
@@ -110,6 +112,7 @@ export async function post({ limit = config.post.perRun, platforms = config.plat
         row.error = err.message;
         scheduled.push(row);
         log.error(`  ${platform} scheduling failed`, err.message);
+        errors.push(`${platform}: ${err.message}`);
       }
     }
   }
@@ -127,6 +130,7 @@ export async function post({ limit = config.post.perRun, platforms = config.plat
 
   const ok = scheduled.filter((s) => s.status === 'scheduled').length;
   log.info(`OUTPUT: ${ok}/${scheduled.length} scheduled across ${platforms.join(', ')}`);
+  reportBatch(log, { attempted: scheduled.length, succeeded: ok, errors });
   return scheduled;
 }
 

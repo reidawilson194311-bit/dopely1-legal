@@ -110,7 +110,8 @@ niche is. Rewrite that one file and the same machine points somewhere else.
 
 `.github/workflows/machine.yml` runs the researcher weekly and
 write → design → post daily, uploading each run's shorts as an artifact. Add
-your keys as repository secrets and enable it. A cron job or any scheduler
+your keys as repository secrets; until they exist the scheduled runs skip
+themselves with a notice instead of failing daily. A cron job or any scheduler
 works the same way — the stages are decoupled and idempotent, so it does not
 matter which one runs when.
 
