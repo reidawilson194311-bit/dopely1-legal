@@ -1,0 +1,93 @@
+name: the machine
+
+on:
+  schedule:
+    # 01 SCRAPE - weekly. The researcher's cost does not scale with output,
+    # and the winners table is an asset that accumulates.
+    - cron: '0 6 * * 1'
+    # 02-04 - daily. Write, design and post from what 01 already found.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      stages:
+        description: 'Comma-separated stages (research,write,design,post)'
+        required: false
+        default: 'write,design,post'
+      dry_run:
+        description: 'Rehearse without spending or publishing'
+        type: boolean
+        default: false
+
+concurrency:
+  group: machine
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install ffmpeg
+        # The apt build includes libfreetype, so drawtext is available and
+        # captions are burned in. Skip it and the machine silently ships
+        # caption-less shorts.
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - run: npm test
+
+      - name: Decide stages
+        id: plan
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "${{ github.event.schedule }}" = "0 6 * * 1" ]; then
+              echo "stages=research" >> "$GITHUB_OUTPUT"
+            else
+              echo "stages=write,design,post" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "stages=${{ inputs.stages }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run
+        env:
+          STORE_DRIVER: airtable
+          AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
+          AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'none' }}
+          TTS_API_KEY: ${{ secrets.TTS_API_KEY }}
+          TTS_VOICE_ID: ${{ vars.TTS_VOICE_ID }}
+          PUBLISH_PROVIDER: ${{ vars.PUBLISH_PROVIDER || 'none' }}
+          METRICOOL_USER_TOKEN: ${{ secrets.METRICOOL_USER_TOKEN }}
+          METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}
+          METRICOOL_BLOG_ID: ${{ secrets.METRICOOL_BLOG_ID }}
+          UNIPILE_API_KEY: ${{ secrets.UNIPILE_API_KEY }}
+          UNIPILE_DSN: ${{ secrets.UNIPILE_DSN }}
+          UNIPILE_ACCOUNT_INSTAGRAM: ${{ secrets.UNIPILE_ACCOUNT_INSTAGRAM }}
+          UNIPILE_ACCOUNT_TIKTOK: ${{ secrets.UNIPILE_ACCOUNT_TIKTOK }}
+          UNIPILE_ACCOUNT_YOUTUBE: ${{ secrets.UNIPILE_ACCOUNT_YOUTUBE }}
+          PUBLISH_TIMEZONE: ${{ vars.PUBLISH_TIMEZONE || 'America/New_York' }}
+        run: |
+          node src/cli.js run \
+            --stages=${{ steps.plan.outputs.stages }} \
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
+
+      - name: Upload rendered shorts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shorts-${{ github.run_id }}
+          path: out/
+          retention-days: 7
+          if-no-files-found: ignore

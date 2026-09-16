@@ -1,0 +1,22 @@
+{
+  "name": "dopely1-shorts-machine",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Autonomous short-form content machine: scrape -> reword -> design -> post. Instagram Reels, TikTok, YouTube Shorts.",
+  "engines": { "node": ">=20" },
+  "bin": { "machine": "./src/cli.js" },
+  "scripts": {
+    "machine": "node src/cli.js run",
+    "research": "node src/cli.js research",
+    "write": "node src/cli.js write",
+    "design": "node src/cli.js design",
+    "post": "node src/cli.js post",
+    "doctor": "node src/cli.js doctor",
+    "demo": "node src/cli.js run --dry-run",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.0"
+  }
+}
