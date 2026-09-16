@@ -21,6 +21,7 @@ import { generateImage } from '../lib/nanobanana.js';
 import { speak, estimateDuration } from '../lib/tts.js';
 import { assemble, hasFfmpeg, probeDuration, FfmpegMissingError } from '../lib/video.js';
 import { newId } from '../lib/id.js';
+import { reportBatch } from '../lib/batch.js';
 
 const log = logger('03-design');
 
@@ -105,6 +106,7 @@ export async function design({ limit = config.design.batchSize } = {}) {
   }
 
   const rendered = [];
+  const errors = [];
   for (const script of scripts) {
     try {
       const row = await buildOne(script, store);
@@ -113,12 +115,14 @@ export async function design({ limit = config.design.batchSize } = {}) {
         `(${row.frames.length} frames, ${row.durationSec}s)`);
     } catch (err) {
       log.error(`failed on ${script.id}`, err.message);
+      errors.push(err.message);
       await store.patch(TABLES.SCRIPTS, script.id, { status: 'design-failed' });
     }
   }
 
   if (rendered.length) await store.upsert(TABLES.RENDERS, rendered);
   log.info(`OUTPUT: ${rendered.length} shorts in ${config.outDir}`);
+  reportBatch(log, { attempted: scripts.length, succeeded: rendered.length, errors });
   return rendered;
 }
 

@@ -9,6 +9,7 @@ import { composeCaption } from '../src/skills/04-poster.js';
 import { nextSlots, zonedTimeToUtc } from '../src/lib/schedule.js';
 import { placeholderPNG, buildPrompt } from '../src/lib/nanobanana.js';
 import { estimateDuration } from '../src/lib/tts.js';
+import { reportBatch } from '../src/lib/batch.js';
 
 // --- 01 researcher ----------------------------------------------------------
 
@@ -245,4 +246,41 @@ test('zonedTimeToUtc handles daylight saving on both sides of the year', () => {
   // New York is UTC-4 in June and UTC-5 in January.
   assert.equal(zonedTimeToUtc(2026, 6, 15, 9, 0, 'America/New_York').toISOString(), '2026-06-15T13:00:00.000Z');
   assert.equal(zonedTimeToUtc(2026, 1, 15, 9, 0, 'America/New_York').toISOString(), '2026-01-15T14:00:00.000Z');
+});
+
+// --- stage failure reporting -----------------------------------------------
+
+const quietLog = () => {
+  const warnings = [];
+  return { warnings, warn: (m, e) => warnings.push(`${m} ${e ?? ''}`.trim()) };
+};
+
+test('a stage with nothing to do is not a failure', () => {
+  const log = quietLog();
+  reportBatch(log, { attempted: 0, succeeded: 0, errors: [] });
+  assert.equal(log.warnings.length, 0);
+});
+
+test('a stage where every item errored throws so the run exits non-zero', () => {
+  // The bug this guards: an unattended cron cannot tell "nothing to do" from
+  // "everything broke" if both just return an empty list.
+  assert.throws(
+    () => reportBatch(quietLog(), { attempted: 3, succeeded: 0, errors: ['boom', 'boom', 'boom'] }),
+    /3 of 3 item\(s\) errored and none succeeded.*boom/,
+  );
+});
+
+test('a partial failure warns but lets the run keep what it earned', () => {
+  const log = quietLog();
+  reportBatch(log, { attempted: 5, succeeded: 3, errors: ['boom', 'boom'] });
+  assert.equal(log.warnings.length, 1);
+  assert.match(log.warnings[0], /2 of 5/);
+});
+
+test('deliberate skips are not counted as errors', () => {
+  // Skill 02 skips winners that overlap their source too closely. Zero
+  // written with zero errors is a clean run, not a broken stage.
+  const log = quietLog();
+  reportBatch(log, { attempted: 4, succeeded: 0, errors: [] });
+  assert.equal(log.warnings.length, 0);
 });

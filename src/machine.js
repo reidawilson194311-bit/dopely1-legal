@@ -64,13 +64,24 @@ export async function run({ stages = Object.keys(STAGES), ...opts } = {}) {
 }
 
 async function summary(results, failures, started) {
-  const store = getStore();
-  const [winners, scripts, renders, posts] = await Promise.all([
-    store.count(TABLES.WINNERS),
-    store.count(TABLES.SCRIPTS),
-    store.count(TABLES.RENDERS),
-    store.count(TABLES.POSTS),
-  ]);
+  // Every stage failure above was caught and recorded. The summary must not
+  // then throw its own way out of run() - if the store is unreachable (a
+  // missing credential, say) that is exactly when the operator most needs to
+  // see which stages failed, so totals degrade to '-' rather than exploding.
+  let totals = { winners: '-', scripts: '-', renders: '-', posts: '-' };
+  try {
+    const store = getStore();
+    const [winners, scripts, renders, posts] = await Promise.all([
+      store.count(TABLES.WINNERS),
+      store.count(TABLES.SCRIPTS),
+      store.count(TABLES.RENDERS),
+      store.count(TABLES.POSTS),
+    ]);
+    totals = { winners, scripts, renders, posts };
+  } catch (err) {
+    log.warn('could not read totals from the store', err.message);
+  }
+  const { winners, scripts, renders, posts } = totals;
 
   log.banner('THE MACHINE', 'Scrape, reword, design, post.');
   const rows = [
