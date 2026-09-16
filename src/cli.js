@@ -17,6 +17,7 @@ import { run, STAGES } from './machine.js';
 import { drain } from './skills/04-poster.js';
 import { getStore, TABLES } from './lib/store/index.js';
 import { hasFfmpeg, hasDrawtext, findFont } from './lib/video.js';
+import { describeWriter } from './lib/writer/index.js';
 
 function parseArgs(argv) {
   const flags = {};
@@ -60,10 +61,27 @@ async function doctor() {
   const checks = [];
   const need = (label, ok, hint) => checks.push({ label, ok, hint });
 
-  need('ANTHROPIC_API_KEY (skill 02)',
-    Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
-    'export ANTHROPIC_API_KEY=... or run `ant auth login`');
   need('APIFY_TOKEN (skill 01)', Boolean(config.research.apifyToken), 'apify.com -> Settings -> API tokens');
+
+  // Skill 02's key depends on which writer is configured.
+  const writer = config.copy.provider;
+  if (writer === 'gemini') {
+    need(`writer: ${await describeWriter()} (skill 02)`,
+      Boolean(config.design.geminiApiKey),
+      'uses GEMINI_API_KEY - the same key as skill 03, nothing extra to set up');
+  } else if (writer === 'openai-compatible') {
+    need(`writer: ${await describeWriter()} (skill 02)`,
+      Boolean(config.copy.openai.apiKey),
+      `set OPENAI_API_KEY (and OPENAI_BASE_URL, currently ${config.copy.openai.baseUrl})`);
+  } else if (writer === 'anthropic') {
+    need(`writer: ${await describeWriter()} (skill 02)`,
+      Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
+      'export ANTHROPIC_API_KEY=... or run `ant auth login`');
+  } else {
+    need(`writer: COPY_PROVIDER="${writer}" (skill 02)`, false,
+      'expected gemini, openai-compatible or anthropic');
+  }
+
   need('GEMINI_API_KEY (skill 03)', Boolean(config.design.geminiApiKey), 'aistudio.google.com -> Get API key');
 
   const ffmpeg = await hasFfmpeg();
@@ -85,6 +103,13 @@ async function doctor() {
   } else {
     need('publisher configured (skill 04)', false,
       'set PUBLISH_PROVIDER=metricool|unipile - without it posts only queue locally');
+  }
+
+  if (config.store.driver === 'json' && process.env.CI) {
+    need('store survives between runs', false,
+      'STORE_DRIVER=json writes to ./data, which a fresh CI runner discards - ' +
+      'each stage would find an empty store and quietly do nothing. ' +
+      'Set STORE_DRIVER=airtable, or run the machine somewhere with a real disk.');
   }
 
   if (config.store.driver === 'airtable') {

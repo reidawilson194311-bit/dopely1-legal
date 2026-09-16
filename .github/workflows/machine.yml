@@ -75,6 +75,8 @@ jobs:
           HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
           HAS_APIFY: ${{ secrets.APIFY_TOKEN != '' }}
           HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' }}
+          HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
+          COPY_PROVIDER: ${{ vars.COPY_PROVIDER || 'gemini' }}
           DRY_RUN_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
           STAGES: ${{ steps.plan.outputs.stages }}
         run: |
@@ -92,11 +94,22 @@ jobs:
             exit 0
           fi
           case "$STAGES" in *research*) [ "$HAS_APIFY" = "true" ] || missing="$missing APIFY_TOKEN";; esac
-          case "$STAGES" in *write*)    [ "$HAS_ANTHROPIC" = "true" ] || missing="$missing ANTHROPIC_API_KEY";; esac
+          # Skill 02's key depends on which writer is configured. On the
+          # default (gemini) it is the same key skill 03 already needs.
+          case "$STAGES" in *write*)
+            case "$COPY_PROVIDER" in
+              gemini)            [ "$HAS_GEMINI" = "true" ]    || missing="$missing GEMINI_API_KEY" ;;
+              openai-compatible) [ "$HAS_OPENAI" = "true" ]    || missing="$missing OPENAI_API_KEY" ;;
+              anthropic)         [ "$HAS_ANTHROPIC" = "true" ] || missing="$missing ANTHROPIC_API_KEY" ;;
+              *) missing="$missing a-valid-COPY_PROVIDER" ;;
+            esac ;;
+          esac
           case "$STAGES" in *design*)   [ "$HAS_GEMINI" = "true" ] || missing="$missing GEMINI_API_KEY";; esac
+          # Both write and design can want the same key; say it once.
+          missing=$(echo "$missing" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/^ *//;s/ *$//')
           if [ -n "$missing" ]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=The machine is not configured yet::Skipping '$STAGES' - missing secret(s):$missing. Add them in Settings > Secrets and variables > Actions, or run this workflow manually with dry_run to rehearse."
+            echo "::notice title=The machine is not configured yet::Skipping '$STAGES' - missing secret(s): $missing. Add them in Settings > Secrets and variables > Actions, or run this workflow manually with dry_run to rehearse."
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
@@ -111,8 +124,12 @@ jobs:
           AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
           AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          COPY_PROVIDER: ${{ vars.COPY_PROVIDER || 'gemini' }}
+          COPY_MODEL: ${{ vars.COPY_MODEL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'none' }}
           TTS_API_KEY: ${{ secrets.TTS_API_KEY }}
           TTS_VOICE_ID: ${{ vars.TTS_VOICE_ID }}

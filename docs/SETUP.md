@@ -36,14 +36,28 @@ Swap actors with `APIFY_ACTOR_INSTAGRAM` / `_TIKTOK` / `_YOUTUBE` if you prefer
 different ones — you only need to adjust `actorInput` in `src/lib/apify.js`
 and the matching normalizer in `src/lib/normalize.js`.
 
-## 3. Skill 02 — Claude
+## 3. Skill 02 — the writer
 
-`ANTHROPIC_API_KEY` from console.anthropic.com, or run `ant auth login` and
-leave the variable unset — the SDK finds the profile either way.
+Skill 02 needs a model that follows a voice brief and returns structured JSON.
+Several can, so the provider is a config choice:
 
-Defaults to `claude-opus-5` at `medium` effort. Scripts are short; this is the
-cheapest stage in the machine by a wide margin. Drop to
-`ANTHROPIC_EFFORT=low` if you are writing dozens a day.
+| `COPY_PROVIDER` | Key | Notes |
+|---|---|---|
+| `gemini` *(default)* | `GEMINI_API_KEY` | **The same key skill 03 already needs.** No extra account, no extra billing. Defaults to `gemini-2.5-flash`. |
+| `openai-compatible` | `OPENAI_API_KEY` + `OPENAI_BASE_URL` | OpenAI, Groq, DeepSeek, Together, OpenRouter, Mistral, or a local llama.cpp / Ollama server — they all speak this shape. |
+| `anthropic` | `ANTHROPIC_API_KEY` | Uses the official SDK, lazily imported. |
+
+Set `COPY_MODEL` to override the provider's default model.
+
+Because the default is Gemini, **the whole machine needs only two keys**:
+`APIFY_TOKEN` and `GEMINI_API_KEY`.
+
+A note on structured output: the machine keeps one strict JSON Schema and
+translates it per provider. Gemini's `responseSchema` rejects
+`additionalProperties`, which OpenAI's strict mode requires — so the schema is
+stripped for Gemini and sent verbatim to OpenAI. A compatible server that
+implements `json_object` but not `json_schema` is detected and falls back to
+putting the schema in the prompt, rather than failing.
 
 ## 4. Skill 03 — Gemini and ffmpeg
 

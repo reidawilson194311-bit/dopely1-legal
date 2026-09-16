@@ -15,6 +15,7 @@ import { placeholderPNG, buildPrompt } from '../src/lib/nanobanana.js';
 import { estimateDuration } from '../src/lib/tts.js';
 import { reportBatch } from '../src/lib/batch.js';
 import { rampedRate } from '../src/lib/ramp.js';
+import { toGeminiSchema, parseJSON, describeSchema, DeclinedError } from '../src/lib/writer/schema.js';
 
 // --- 01 researcher ----------------------------------------------------------
 
@@ -427,4 +428,77 @@ test('drain ignores platforms it was not asked about', async () => {
   const provider = fakeProvider();
   await drain({ store, platforms: ['tiktok'], provider });
   assert.equal(provider.calls.length, 0);
+});
+
+// --- the writer seam (skill 02 is provider-agnostic) ------------------------
+
+test('toGeminiSchema strips keys Gemini rejects, keeps the rest', () => {
+  // additionalProperties is required for OpenAI strict mode and rejected
+  // outright by Gemini, so one schema has to be translated, not duplicated.
+  const strict = {
+    type: 'object',
+    additionalProperties: false,
+    $schema: 'http://json-schema.org/draft-07/schema#',
+    required: ['hook', 'beats'],
+    properties: {
+      hook: { type: 'string', description: 'Max 12 words.' },
+      pillar: { type: 'string', enum: ['a', 'b'] },
+      beats: {
+        type: 'array',
+        minItems: 3,
+        maxItems: 7,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['onScreenText'],
+          properties: { onScreenText: { type: 'string' } },
+        },
+      },
+    },
+  };
+  const g = toGeminiSchema(strict);
+
+  assert.equal(g.additionalProperties, undefined);
+  assert.equal(g.$schema, undefined);
+  assert.equal(g.properties.beats.items.additionalProperties, undefined, 'strips at every depth');
+
+  // Everything load-bearing survives.
+  assert.deepEqual(g.required, ['hook', 'beats']);
+  assert.deepEqual(g.properties.pillar.enum, ['a', 'b']);
+  assert.equal(g.properties.hook.description, 'Max 12 words.');
+  assert.equal(g.properties.beats.maxItems, 7);
+  assert.equal(g.properties.beats.minItems, 3);
+  assert.equal(g.properties.beats.items.properties.onScreenText.type, 'string');
+});
+
+test('toGeminiSchema does not mutate the schema it was given', () => {
+  // The same schema object is reused across providers within one run.
+  const original = { type: 'object', additionalProperties: false, properties: {} };
+  toGeminiSchema(original);
+  assert.equal(original.additionalProperties, false);
+});
+
+test('parseJSON survives a model that fences its JSON anyway', () => {
+  assert.deepEqual(parseJSON('{"a":1}', 'p'), { a: 1 });
+  assert.deepEqual(parseJSON('```json\n{"a":1}\n```', 'p'), { a: 1 });
+  assert.deepEqual(parseJSON('```\n{"a":1}\n```', 'p'), { a: 1 });
+  assert.deepEqual(parseJSON('  \n {"a":1}\n ', 'p'), { a: 1 });
+});
+
+test('parseJSON names the provider when it fails', () => {
+  assert.throws(() => parseJSON('sorry, I cannot', 'Gemini'), /Gemini returned unparseable JSON/);
+  assert.throws(() => parseJSON('', 'Gemini'), /Gemini returned no content/);
+});
+
+test('describeSchema gives a fallback provider something to follow', () => {
+  const text = describeSchema({ type: 'object', properties: { hook: { type: 'string' } } });
+  assert.match(text, /JSON only/);
+  assert.match(text, /"hook"/);
+});
+
+test('a decline from any provider is one error type skill 02 can catch', () => {
+  const err = new DeclinedError('Gemini', 'SAFETY');
+  assert.equal(err.name, 'DeclinedError');
+  assert.match(err.message, /Gemini declined this request \(SAFETY\)/);
+  assert.match(new DeclinedError('The model').message, /The model declined this request$/);
 });

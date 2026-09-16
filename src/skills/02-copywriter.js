@@ -15,7 +15,7 @@ import { config } from '../config.js';
 import { NICHE } from '../niche.js';
 import { logger } from '../lib/log.js';
 import { getStore, TABLES } from '../lib/store/index.js';
-import { generateJSON, RefusalError } from '../lib/claude.js';
+import { generateJSON, DeclinedError, describeWriter } from '../lib/writer/index.js';
 import { newId, slug } from '../lib/id.js';
 import { reportBatch } from '../lib/batch.js';
 
@@ -221,6 +221,7 @@ export async function write({ limit = config.copy.batchSize } = {}) {
     return [];
   }
   log.info(`NODE 1 / INPUT: ${winners.length} winners`);
+  if (!config.dryRun) log.info(`NODE 2 / ENGINE: ${await describeWriter()}`);
 
   const recentTitles = (await store.list(TABLES.SCRIPTS, { limit: 25 })).map((s) => s.title);
   const written = [];
@@ -262,7 +263,7 @@ export async function write({ limit = config.copy.batchSize } = {}) {
       await store.patch(TABLES.WINNERS, winner.id, { status: 'used' });
       log.info(`  wrote "${script.title}" [${script.pillar}] ${script.beats.length} beats`);
     } catch (err) {
-      if (err instanceof RefusalError) {
+      if (err instanceof DeclinedError) {
         log.warn('declined, marking the source and moving on', winner.id);
         await store.patch(TABLES.WINNERS, winner.id, { status: 'rejected-declined' });
         continue;
