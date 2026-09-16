@@ -1,0 +1,278 @@
+/**
+ * SKILL 02 / THE COPYWRITER  -  "It launders the idea."
+ *
+ *   NODE 1  INPUT   reads the winners
+ *   NODE 2  ENGINE  rewrite + voice-match (same idea, new words, sounds human)
+ *   NODE 3  OUTPUT  a new script table
+ *
+ * The proven thing is the *idea* - the angle that made a stranger stop
+ * scrolling. That transfers. The words do not: republishing someone's script
+ * is both a copyright problem and a duplicate-content problem. So the engine
+ * takes the idea, throws the execution away, and rebuilds it in our voice as a
+ * short-form video script.
+ */
+import { config } from '../config.js';
+import { NICHE } from '../niche.js';
+import { logger } from '../lib/log.js';
+import { getStore, TABLES } from '../lib/store/index.js';
+import { generateJSON, RefusalError } from '../lib/claude.js';
+import { newId, slug } from '../lib/id.js';
+
+const log = logger('02-copy');
+
+/** Share of output trigrams allowed to appear in the source before we reject. */
+const OVERLAP_LIMIT = 0.15;
+
+const scriptSchema = (beats) => ({
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'title', 'pillar', 'hook', 'beats', 'cta',
+    'captions', 'hashtags', 'youtubeTitle', 'sourceNote', 'estimatedDurationSec',
+  ],
+  properties: {
+    title: { type: 'string', description: 'Internal working title, max 8 words.' },
+    pillar: { type: 'string', enum: NICHE.pillars.map((p) => p.id) },
+    hook: {
+      type: 'string',
+      description: 'Spoken first line. Max 12 words. The first four words must carry it.',
+    },
+    beats: {
+      type: 'array',
+      minItems: Math.max(3, beats - 1),
+      maxItems: beats + 1,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['onScreenText', 'voiceover', 'imagePrompt'],
+        properties: {
+          onScreenText: { type: 'string', description: 'Burned-in caption. Max 7 words.' },
+          voiceover: { type: 'string', description: 'One or two spoken sentences.' },
+          imagePrompt: {
+            type: 'string',
+            description:
+              'A literal description of one image illustrating this beat. Describe the subject, ' +
+              'composition and lighting. No text, no logos, no real people.',
+          },
+        },
+      },
+    },
+    cta: { type: 'string', description: 'One line. A reason to follow, not a demand.' },
+    captions: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['instagram', 'tiktok', 'youtube'],
+      properties: {
+        instagram: { type: 'string' },
+        tiktok: { type: 'string' },
+        youtube: { type: 'string' },
+      },
+    },
+    hashtags: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['instagram', 'tiktok', 'youtube'],
+      properties: {
+        instagram: { type: 'array', items: { type: 'string' }, maxItems: 8 },
+        tiktok: { type: 'array', items: { type: 'string' }, maxItems: 6 },
+        youtube: { type: 'array', items: { type: 'string' }, maxItems: 5 },
+      },
+    },
+    youtubeTitle: { type: 'string', description: 'Max 70 characters.' },
+    sourceNote: {
+      type: 'string',
+      description:
+        'Where the central claim comes from and how a viewer could check it. ' +
+        'If it cannot be sourced, say so plainly - that script gets dropped.',
+    },
+    estimatedDurationSec: { type: 'number' },
+  },
+});
+
+function systemPrompt() {
+  return [
+    `You write short-form video scripts for a ${NICHE.name} account publishing to`,
+    'Instagram Reels, TikTok and YouTube Shorts.',
+    '',
+    `BRIEF: ${NICHE.brief}`,
+    '',
+    `VOICE: ${NICHE.voice.persona}`,
+    ...NICHE.voice.rules.map((r) => `- ${r}`),
+    '',
+    `NEVER WRITE: ${NICHE.voice.banned_phrases.join(', ')}.`,
+    '',
+    'NEVER COVER:',
+    ...NICHE.exclusions.map((e) => `- ${e}`),
+    '',
+    'HOW TO USE THE REFERENCE POST:',
+    'You are given one post that already performed well. Take only its underlying',
+    'idea and the structural reason it worked - the curiosity gap, the reversal,',
+    'the surprising number. Then write something new about that idea.',
+    'Do not reuse its sentences, its phrasing or its exact framing. If you find',
+    'yourself echoing more than three consecutive words from the reference, rewrite.',
+    '',
+    'ACCURACY: every factual claim must be true and checkable. A script whose',
+    'central claim you cannot source is worthless to us - say so in sourceNote',
+    'rather than inventing a citation.',
+    '',
+    `LENGTH: ${config.copy.beatsPerScript} beats, 30-45 seconds of voiceover total.`,
+  ].join('\n');
+}
+
+function userPrompt(winner, recentTitles) {
+  return [
+    'REFERENCE POST (performed well - use the idea, not the words):',
+    `  platform: ${winner.platform}`,
+    `  views: ${winner.views.toLocaleString()} (${winner.viralMultiple}x this account's median)`,
+    `  caption: ${winner.caption?.slice(0, 600) || '(none)'}`,
+    '',
+    recentTitles.length
+      ? `ALREADY PUBLISHED - do not repeat these angles:\n${recentTitles.map((t) => `  - ${t}`).join('\n')}`
+      : '',
+    '',
+    'Write one original short-form video script.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * Guard against the engine echoing the source it was told to launder.
+ *
+ * Measured over word trigrams, not a bag of words: two texts about the same
+ * subject legitimately share nouns and every text shares "the" and "is", so a
+ * vocabulary overlap flags honest rewrites. A shared run of three consecutive
+ * words is the thing the system prompt actually forbids, and it is rare by
+ * chance. Returns the share of the output's trigrams that appear in the source.
+ */
+export function overlapRatio(source, output) {
+  const words = (s) => String(s || '').toLowerCase().match(/[a-z0-9']+/g) || [];
+  const trigrams = (w) => {
+    const out = [];
+    for (let i = 0; i + 2 < w.length; i++) out.push(`${w[i]} ${w[i + 1]} ${w[i + 2]}`);
+    return out;
+  };
+  const src = new Set(trigrams(words(source)));
+  const out = trigrams(words(output));
+  if (!out.length || !src.size) return 0;
+  return out.filter((t) => src.has(t)).length / out.length;
+}
+
+/**
+ * Stand-in for the engine in --dry-run. It deliberately does NOT echo the
+ * source wording - a placeholder that trips the overlap guard would make the
+ * dry run exercise the reject path instead of the happy path, and hide whether
+ * the rest of the pipeline works.
+ */
+const STOPWORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'but', 'is', 'are', 'was', 'were', 'be', 'been',
+  'to', 'of', 'in', 'on', 'for', 'that', 'this', 'it', 'its', 'your', 'you',
+  'has', 'have', 'had', 'than', 'then', 'with', 'by', 'at', 'as', 'from', 'did',
+]);
+
+function topicOf(text) {
+  const words = String(text || '').toLowerCase().match(/[a-z]{4,}/g) || [];
+  const keep = words.filter((w) => !STOPWORDS.has(w));
+  return keep.slice(0, 2).join(' ') || 'the thing';
+}
+
+function dryRunScript(winner) {
+  const pillar = NICHE.pillars[winner.views % NICHE.pillars.length];
+  const topic = topicOf(winner.hook || winner.caption);
+  return {
+    title: `Placeholder about ${topic}`.slice(0, 60),
+    pillar: pillar.id,
+    hook: 'Nobody mentions the part that matters.',
+    beats: Array.from({ length: config.copy.beatsPerScript }, (_, i) => ({
+      onScreenText: `Point ${i + 1}`,
+      voiceover: `Dry-run narration, line ${i + 1}. Nothing here is a real claim.`,
+      imagePrompt: `Editorial photograph, concept: ${topic}, frame ${i + 1}, no text.`,
+    })),
+    cta: 'Follow for one of these a day.',
+    captions: {
+      instagram: `Placeholder caption — dry run (${topic}).`,
+      tiktok: `Placeholder caption — dry run (${topic}).`,
+      youtube: `Placeholder caption — dry run (${topic}).`,
+    },
+    hashtags: {
+      instagram: NICHE.hashtags.instagram.slice(0, 5),
+      tiktok: NICHE.hashtags.tiktok.slice(0, 5),
+      youtube: NICHE.hashtags.youtube.slice(0, 4),
+    },
+    youtubeTitle: `Placeholder: ${topic}`.slice(0, 70),
+    sourceNote: 'Dry-run placeholder — not a sourced claim.',
+    estimatedDurationSec: 38,
+  };
+}
+
+export async function write({ limit = config.copy.batchSize } = {}) {
+  log.banner('SKILL 02 / THE COPYWRITER', 'It launders the idea.');
+  const store = getStore();
+
+  // NODE 1, INPUT: read the winners we have not written from yet.
+  const winners = await store.list(TABLES.WINNERS, {
+    where: (r) => r.status === 'winner',
+    sort: (a, b) => (b.viralScore || 0) - (a.viralScore || 0),
+    limit,
+  });
+  if (!winners.length) {
+    log.warn('no unused winners - run the researcher first');
+    return [];
+  }
+  log.info(`NODE 1 / INPUT: ${winners.length} winners`);
+
+  const recentTitles = (await store.list(TABLES.SCRIPTS, { limit: 25 })).map((s) => s.title);
+  const written = [];
+
+  // NODE 2, ENGINE: rewrite + voice-match.
+  for (const winner of winners) {
+    try {
+      const script = config.dryRun
+        ? dryRunScript(winner)
+        : await generateJSON({
+            system: systemPrompt(),
+            prompt: userPrompt(winner, recentTitles),
+            schema: scriptSchema(config.copy.beatsPerScript),
+          });
+
+      const spoken = [script.hook, ...script.beats.map((b) => b.voiceover)].join(' ');
+      const overlap = overlapRatio(winner.caption, spoken);
+      if (overlap > OVERLAP_LIMIT) {
+        log.warn(`too close to the source (${Math.round(overlap * 100)}% trigram echo), skipping`, winner.id);
+        await store.patch(TABLES.WINNERS, winner.id, { status: 'rejected-overlap' });
+        continue;
+      }
+
+      const row = {
+        id: newId('scr'),
+        niche: NICHE.id,
+        sourceWinnerId: winner.id,
+        sourcePlatform: winner.platform,
+        sourceUrl: winner.url,
+        slug: slug(script.title),
+        ...script,
+        overlapRatio: Number(overlap.toFixed(3)),
+        status: 'ready-to-design',
+        writtenAt: new Date().toISOString(),
+      };
+      written.push(row);
+      recentTitles.push(script.title);
+      await store.patch(TABLES.WINNERS, winner.id, { status: 'used' });
+      log.info(`  wrote "${script.title}" [${script.pillar}] ${script.beats.length} beats`);
+    } catch (err) {
+      if (err instanceof RefusalError) {
+        log.warn('declined, marking the source and moving on', winner.id);
+        await store.patch(TABLES.WINNERS, winner.id, { status: 'rejected-declined' });
+        continue;
+      }
+      log.error(`failed on ${winner.id}`, err.message);
+    }
+  }
+
+  // NODE 3, OUTPUT: the new copy table.
+  if (written.length) await store.upsert(TABLES.SCRIPTS, written);
+  log.info(`NODE 3 / OUTPUT: ${written.length} scripts written to ${store.driver}`);
+  return written;
+}
+
+export default write;

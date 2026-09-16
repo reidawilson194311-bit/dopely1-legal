@@ -1,0 +1,125 @@
+/**
+ * SKILL 03 / THE DESIGNER  -  "It makes the visuals."
+ *
+ *   INPUT   reads the copy table
+ *   ENGINE  nano banana turns each row of copy into an image
+ *   OUTPUT  a vertical short, ready to publish
+ *
+ * No designer. No camera. No face.
+ *
+ * The video shows this stage producing a carousel. Reels, TikTok and Shorts all
+ * want video, so the frames are assembled into a 1080x1920 MP4 instead - the
+ * storyboard of stills is kept as well, so the same run can also post a
+ * carousel to Instagram if you want both.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { config } from '../config.js';
+import { logger } from '../lib/log.js';
+import { getStore, TABLES } from '../lib/store/index.js';
+import { generateImage } from '../lib/nanobanana.js';
+import { speak, estimateDuration } from '../lib/tts.js';
+import { assemble, hasFfmpeg, probeDuration, FfmpegMissingError } from '../lib/video.js';
+import { newId } from '../lib/id.js';
+
+const log = logger('03-design');
+
+async function buildOne(script, store) {
+  const dir = path.join(config.outDir, script.slug || script.id);
+  fs.mkdirSync(dir, { recursive: true });
+
+  // The hook is beat zero: it gets its own frame so the first 1.5 seconds are
+  // doing the work rather than a title card nobody reads.
+  const beatsIn = [
+    { onScreenText: script.hook, voiceover: script.hook, imagePrompt: script.beats[0].imagePrompt },
+    ...script.beats,
+  ];
+
+  const beats = [];
+  for (const [i, beat] of beatsIn.entries()) {
+    const imagePath = path.join(dir, `beat-${String(i).padStart(2, '0')}.png`);
+    if (!fs.existsSync(imagePath)) {
+      await generateImage(beat.imagePrompt, imagePath);
+    }
+    const audioPath = await speak(beat.voiceover, path.join(dir, `beat-${String(i).padStart(2, '0')}.mp3`));
+    const durationSec =
+      (audioPath && (await probeDuration(audioPath))) ?? estimateDuration(beat.voiceover);
+    beats.push({
+      imagePath,
+      audioPath,
+      onScreenText: beat.onScreenText,
+      voiceover: beat.voiceover,
+      durationSec: Number((durationSec + 0.35).toFixed(2)), // a breath between beats
+    });
+  }
+
+  const videoPath = path.join(dir, 'short.mp4');
+  let video = null;
+  try {
+    video = await assemble(beats, videoPath);
+  } catch (err) {
+    if (!(err instanceof FfmpegMissingError)) throw err;
+    log.warn('ffmpeg missing - storyboard saved, video not encoded');
+  }
+
+  const row = {
+    id: newId('rnd'),
+    scriptId: script.id,
+    niche: script.niche,
+    title: script.title,
+    slug: script.slug,
+    pillar: script.pillar,
+    dir,
+    frames: beats.map((b) => b.imagePath),
+    videoPath: video?.path || null,
+    durationSec: video?.durationSec ?? Number(beats.reduce((s, b) => s + b.durationSec, 0).toFixed(2)),
+    hasAudio: Boolean(video?.hasAudio),
+    captions: script.captions,
+    hashtags: script.hashtags,
+    youtubeTitle: script.youtubeTitle,
+    cta: script.cta,
+    status: video ? 'ready-to-post' : 'needs-encode',
+    renderedAt: new Date().toISOString(),
+  };
+
+  fs.writeFileSync(path.join(dir, 'script.json'), JSON.stringify({ ...script, render: row }, null, 2));
+  await store.patch(TABLES.SCRIPTS, script.id, { status: video ? 'designed' : 'needs-encode' });
+  return row;
+}
+
+export async function design({ limit = config.design.batchSize } = {}) {
+  log.banner('SKILL 03 / THE DESIGNER', 'It makes the visuals.');
+  const store = getStore();
+
+  const scripts = await store.list(TABLES.SCRIPTS, {
+    where: (r) => r.status === 'ready-to-design',
+    limit,
+  });
+  if (!scripts.length) {
+    log.warn('no scripts waiting - run the copywriter first');
+    return [];
+  }
+  log.info(`INPUT: ${scripts.length} scripts`);
+  if (!(await hasFfmpeg())) {
+    log.warn('ffmpeg not found - frames will be generated but nothing will be encoded');
+  }
+
+  const rendered = [];
+  for (const script of scripts) {
+    try {
+      const row = await buildOne(script, store);
+      rendered.push(row);
+      log.info(`  ${row.status === 'ready-to-post' ? 'rendered' : 'storyboarded'} "${row.title}" ` +
+        `(${row.frames.length} frames, ${row.durationSec}s)`);
+    } catch (err) {
+      log.error(`failed on ${script.id}`, err.message);
+      await store.patch(TABLES.SCRIPTS, script.id, { status: 'design-failed' });
+    }
+  }
+
+  if (rendered.length) await store.upsert(TABLES.RENDERS, rendered);
+  log.info(`OUTPUT: ${rendered.length} shorts in ${config.outDir}`);
+  return rendered;
+}
+
+export default design;
