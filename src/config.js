@@ -73,9 +73,22 @@ export const config = {
 
   // ---- Skill 02: the copywriter -------------------------------------------
   copy: {
-    model: env('ANTHROPIC_MODEL', 'claude-opus-5'),
+    /**
+     * 'gemini' | 'openai-compatible' | 'anthropic'.
+     * Defaults to Gemini because skill 03 already needs that key - writing the
+     * scripts with it costs no extra account and no extra billing setup.
+     */
+    provider: env('COPY_PROVIDER', 'gemini'),
+    /** Blank means the provider's own default model. */
+    model: env('COPY_MODEL', ''),
+    maxTokens: num('COPY_MAX_TOKENS', 8000),
+    openai: {
+      apiKey: env('OPENAI_API_KEY'),
+      /** Any OpenAI-compatible server: Groq, DeepSeek, Together, Ollama... */
+      baseUrl: env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+    },
+    /** Anthropic only. */
     effort: env('ANTHROPIC_EFFORT', 'medium'),
-    maxTokens: num('ANTHROPIC_MAX_TOKENS', 16000),
     /** Scripts to write per run. */
     batchSize: num('COPY_BATCH_SIZE', 6),
     /** Beats (= generated images) per short. 5-7 reads well at 30-45s. */

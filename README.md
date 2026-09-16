@@ -57,10 +57,10 @@ running on fixtures. Step-by-step: **[docs/SETUP.md](docs/SETUP.md)**.
 | Stage | Needs | Cost shape |
 |---|---|---|
 | 01 researcher | Apify | per run, not per post — run it weekly |
-| 02 copywriter | Anthropic (Claude) | one short call per script |
+| 02 copywriter | Gemini (default), or any OpenAI-compatible API, or Anthropic | one short call per script |
 | 03 designer | Gemini image model + ffmpeg | 7 images per short |
 | 04 poster | Metricool or Unipile | flat monthly |
-| store | nothing, or Airtable | — |
+| store | Airtable (required on CI), or flat files on a persistent box | — |
 
 ## Commands
 

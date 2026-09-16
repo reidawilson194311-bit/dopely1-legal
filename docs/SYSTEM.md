@@ -55,7 +55,7 @@ Writes: **winners**.
   NODE 3  OUTPUT  a new script table
 ```
 
-Claude takes one winner and writes a *new* short-form video script: a hook, six
+The writer takes one winner and writes a *new* short-form video script: a hook, six
 beats (on-screen text + voiceover + an image prompt), a caption per platform,
 hashtags per platform, and a YouTube title.
 
@@ -72,6 +72,11 @@ Trigrams, not a bag of words — two scripts about the same subject legitimately
 share nouns, and every English sentence shares "the" and "is". A shared run of
 three consecutive words is the thing actually being forbidden, and it almost
 never happens by chance.
+
+The provider is configurable (`COPY_PROVIDER`): Gemini by default, since
+skill 03 already needs that key; any OpenAI-compatible endpoint; or Anthropic.
+One strict JSON Schema is kept and translated per provider, rather than three
+schemas that can drift apart.
 
 Writes: **scripts**. Marks each source winner `used`.
 

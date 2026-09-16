@@ -1,5 +1,6 @@
-import { config } from '../config.js';
-import { logger } from './log.js';
+import { config } from '../../config.js';
+import { logger } from '../log.js';
+import { DeclinedError } from './schema.js';
 
 const log = logger('claude');
 let client;
@@ -15,13 +16,7 @@ async function getClient() {
   return client;
 }
 
-export class RefusalError extends Error {
-  constructor(details) {
-    super(`Claude declined this request${details?.category ? ` (${details.category})` : ''}`);
-    this.name = 'RefusalError';
-    this.details = details;
-  }
-}
+export const DEFAULT_MODEL = 'claude-opus-5';
 
 const isFallbackUnsupported = (err) =>
   err?.status === 400 && /fallback|beta/i.test(err?.message || '');
@@ -37,12 +32,12 @@ export async function generateJSON({
   system,
   prompt,
   schema,
-  model = config.copy.model,
+  model,
+  maxTokens,
   effort = config.copy.effort,
-  maxTokens = config.copy.maxTokens,
 }) {
   const base = {
-    model,
+    model: model || DEFAULT_MODEL,
     max_tokens: maxTokens,
     output_config: { effort, format: { type: 'json_schema', schema } },
     system,
@@ -62,9 +57,11 @@ export async function generateJSON({
     response = await (await getClient()).messages.create(base);
   }
 
-  if (response.stop_reason === 'refusal') throw new RefusalError(response.stop_details);
+  if (response.stop_reason === 'refusal') {
+    throw new DeclinedError('Claude', response.stop_details?.category);
+  }
   if (response.stop_reason === 'max_tokens') {
-    throw new Error(`Response hit max_tokens (${maxTokens}) - raise ANTHROPIC_MAX_TOKENS`);
+    throw new Error(`Response hit max_tokens (${maxTokens}) - raise COPY_MAX_TOKENS`);
   }
 
   const text = response.content
