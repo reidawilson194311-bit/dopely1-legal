@@ -5,11 +5,16 @@ import { pickWinners, median, engagementRate } from '../src/lib/score.js';
 import { normalize, extractHook } from '../src/lib/normalize.js';
 import { overlapRatio } from '../src/skills/02-copywriter.js';
 import { wrapCaption, buildFilterGraph } from '../src/lib/video.js';
-import { composeCaption } from '../src/skills/04-poster.js';
+import { composeCaption, drain } from '../src/skills/04-poster.js';
+import { createJsonStore } from '../src/lib/store/jsonStore.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { nextSlots, zonedTimeToUtc } from '../src/lib/schedule.js';
 import { placeholderPNG, buildPrompt } from '../src/lib/nanobanana.js';
 import { estimateDuration } from '../src/lib/tts.js';
 import { reportBatch } from '../src/lib/batch.js';
+import { rampedRate } from '../src/lib/ramp.js';
 
 // --- 01 researcher ----------------------------------------------------------
 
@@ -283,4 +288,143 @@ test('deliberate skips are not counted as errors', () => {
   const log = quietLog();
   reportBatch(log, { attempted: 4, succeeded: 0, errors: [] });
   assert.equal(log.warnings.length, 0);
+});
+
+// --- posting rate ramp ------------------------------------------------------
+
+const RAMP = { start: 2, target: 4, days: 21 };
+const dayN = (first, n) => new Date(Date.parse(first) + n * 86400000);
+const FIRST = '2026-01-01T00:00:00Z';
+
+test('the ramp starts at the start rate and ends at the target', () => {
+  assert.equal(rampedRate({ ...RAMP, firstPostAt: null }), 2, 'no history is day zero');
+  assert.equal(rampedRate({ ...RAMP, firstPostAt: FIRST, now: dayN(FIRST, 0) }), 2);
+  assert.equal(rampedRate({ ...RAMP, firstPostAt: FIRST, now: dayN(FIRST, 21) }), 4);
+  assert.equal(rampedRate({ ...RAMP, firstPostAt: FIRST, now: dayN(FIRST, 400) }), 4, 'never overshoots');
+});
+
+test('the ramp only ever climbs', () => {
+  let prev = 0;
+  for (let d = 0; d <= 30; d++) {
+    const rate = rampedRate({ ...RAMP, firstPostAt: FIRST, now: dayN(FIRST, d) });
+    assert.ok(rate >= prev, `rate dropped on day ${d}`);
+    assert.ok(rate >= 2 && rate <= 4, `rate out of bounds on day ${d}: ${rate}`);
+    prev = rate;
+  }
+});
+
+test('the ramp is measured from account history, not process start', () => {
+  // An account that has been posting for a month is already at full rate on a
+  // freshly restarted machine - the ramp must not start over.
+  const old = new Date(Date.now() - 60 * 86400000).toISOString();
+  assert.equal(rampedRate({ ...RAMP, firstPostAt: old }), 4);
+});
+
+test('the ramp degrades safely on nonsense input', () => {
+  assert.equal(rampedRate({ ...RAMP, firstPostAt: 'not a date' }), 2);
+  assert.equal(rampedRate({ start: 4, target: 2, days: 21, firstPostAt: FIRST }), 4, 'target below start is ignored');
+  assert.equal(rampedRate({ start: 2, target: 4, days: 0, firstPostAt: FIRST }), 4);
+  assert.equal(rampedRate({ start: 0, target: 4, days: 21, firstPostAt: FIRST }), 1, 'never zero');
+});
+
+// --- the drain (the bug that meant Unipile never uploaded anything) --------
+
+function tempStore() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'drain-'));
+  return createJsonStore({ dataDir: dir });
+}
+
+const queuedPost = (over = {}) => ({
+  id: 'p1', platform: 'tiktok', title: 'T', caption: 'c',
+  videoPath: '/dev/null', status: 'queued',
+  publishAt: new Date(Date.now() - 60000).toISOString(),
+  ...over,
+});
+
+function fakeProvider(behaviour = () => ({ externalId: 'ext-1' })) {
+  const calls = [];
+  return {
+    name: 'fake',
+    calls,
+    async schedule(payload) {
+      calls.push(payload);
+      return behaviour(payload);
+    },
+  };
+}
+
+test('drain publishes a queued post whose slot is due', async () => {
+  const store = tempStore();
+  await store.upsert('posts', [queuedPost()]);
+  const provider = fakeProvider();
+
+  const published = await drain({ store, platforms: ['tiktok'], provider });
+
+  assert.equal(provider.calls.length, 1, 'the upload actually happened');
+  assert.equal(published.length, 1);
+  const row = await store.get('posts', 'p1');
+  assert.equal(row.status, 'published');
+  assert.equal(row.externalId, 'ext-1');
+  assert.ok(row.publishedAt);
+});
+
+test('drain leaves a post whose slot has not come yet', async () => {
+  const store = tempStore();
+  await store.upsert('posts', [
+    queuedPost({ publishAt: new Date(Date.now() + 3600000).toISOString() }),
+  ]);
+  const provider = fakeProvider();
+
+  assert.equal((await drain({ store, platforms: ['tiktok'], provider })).length, 0);
+  assert.equal(provider.calls.length, 0);
+  assert.equal((await store.get('posts', 'p1')).status, 'queued');
+});
+
+test('drain never republishes a post it already sent', async () => {
+  const store = tempStore();
+  await store.upsert('posts', [queuedPost({ status: 'published' })]);
+  const provider = fakeProvider();
+
+  await drain({ store, platforms: ['tiktok'], provider });
+  assert.equal(provider.calls.length, 0, 'double-posting is worse than not posting');
+});
+
+test('a failed upload stays queued so the next drain retries it', async () => {
+  const store = tempStore();
+  await store.upsert('posts', [queuedPost()]);
+  const flaky = fakeProvider(() => { throw new Error('upstream 503'); });
+
+  // Every item failed, so the stage reports failure rather than reporting success.
+  await assert.rejects(() => drain({ store, platforms: ['tiktok'], provider: flaky }), /none succeeded/);
+
+  const row = await store.get('posts', 'p1');
+  assert.equal(row.status, 'queued', 'still owed, not silently dropped');
+  assert.match(row.error, /upstream 503/);
+
+  // And the retry succeeds.
+  const good = fakeProvider();
+  await drain({ store, platforms: ['tiktok'], provider: good });
+  assert.equal(good.calls.length, 1);
+  assert.equal((await store.get('posts', 'p1')).status, 'published');
+});
+
+test('drain tells the publisher to go now, not to wait', async () => {
+  // The original bug in miniature: passing the future slot time made Unipile
+  // hand it back unpublished, forever.
+  const store = tempStore();
+  const slot = new Date(Date.now() - 120000).toISOString();
+  await store.upsert('posts', [queuedPost({ publishAt: slot })]);
+  const provider = fakeProvider();
+  const now = new Date();
+
+  await drain({ store, platforms: ['tiktok'], provider, now });
+  assert.equal(provider.calls[0].publishAt.getTime(), now.getTime());
+});
+
+test('drain ignores platforms it was not asked about', async () => {
+  const store = tempStore();
+  await store.upsert('posts', [queuedPost({ platform: 'instagram' })]);
+  const provider = fakeProvider();
+  await drain({ store, platforms: ['tiktok'], provider });
+  assert.equal(provider.calls.length, 0);
 });

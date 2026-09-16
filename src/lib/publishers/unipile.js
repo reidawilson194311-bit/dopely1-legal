@@ -18,9 +18,10 @@ function accountId(platform) {
 }
 
 /**
- * Unipile publishes immediately, so scheduled-for-later posts are held locally
- * and released by the machine's own scheduler. `publishAt` in the future
- * therefore returns a queued record rather than a live post.
+ * Unipile publishes immediately - it has no scheduling of its own. A post
+ * dated in the future is therefore handed back unpublished, to be held in the
+ * posts table and released by `drain()` once its slot comes due. Anything due
+ * now goes straight out.
  */
 export async function schedule({ platform, videoPath, caption, publishAt, youtubeTitle }) {
   const { url, apiKey } = base();
@@ -46,7 +47,7 @@ export async function schedule({ platform, videoPath, caption, publishAt, youtub
   });
   const id = res?.post_id || res?.id || null;
   log.debug(`published ${platform}`, { id });
-  return { externalId: id, raw: res, queuedLocally: false };
+  return { externalId: id, raw: res, queuedLocally: false, publishedNow: true };
 }
 
 export default { schedule, name: 'unipile' };

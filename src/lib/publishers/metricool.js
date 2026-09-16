@@ -75,7 +75,8 @@ export async function schedule({ platform, videoUrl, caption, publishAt, youtube
   });
   const id = res?.data?.id || res?.id || null;
   log.debug(`scheduled ${platform}`, { id, at: publishAt.toISOString() });
-  return { externalId: id, raw: res };
+  // Metricool owns the post from here - nothing for the drain to do.
+  return { externalId: id, raw: res, queuedLocally: false };
 }
 
 export default { uploadMedia, schedule, name: 'metricool' };

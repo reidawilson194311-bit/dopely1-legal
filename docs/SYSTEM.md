@@ -124,6 +124,24 @@ Composes a caption per platform (body + CTA + hashtags, trimmed to each
 platform's limit), picks the next free slot per platform from the slot table,
 and hands the video to Metricool or Unipile.
 
+**Rate ramp.** `PUBLISH_PER_RUN` counts *distinct videos*, each cross-posted to
+every platform — 2 means 2 posts per account per day, not 6. The rate climbs
+from there to `PUBLISH_RAMP_TO` over `PUBLISH_RAMP_DAYS`, because an account
+that opens at full cadence reads as a bot. The clock runs from the first post
+the machine ever scheduled, so the ramp survives restarts and gaps — it is a
+property of the account's history, not of the process.
+
+**The drain.** Not every publisher can schedule ahead. Metricool takes a
+publication date and owns the post from that moment. Unipile publishes
+immediately and has no concept of "later", so a future-dated post is held in
+the posts table as `queued` and released by `machine drain` once its slot comes
+due. The hourly cron in `machine.yml` runs it, and skips itself entirely unless
+`PUBLISH_PROVIDER=unipile`.
+
+A queued post that fails to upload stays `queued` and is retried on the next
+drain rather than being silently dropped; only a successful upload moves it to
+`published`.
+
 Slots are real local times in `PUBLISH_TIMEZONE`, converted through `Intl` so
 daylight saving is handled — a machine that posts an hour late for half the
 year is a machine nobody trusts. Slots already taken by earlier runs are never

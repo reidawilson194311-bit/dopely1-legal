@@ -7,6 +7,10 @@ on:
     - cron: '0 6 * * 1'
     # 02-04 - daily. Write, design and post from what 01 already found.
     - cron: '0 7 * * *'
+    # Drain - hourly, because slots land on the hour and Unipile has no
+    # scheduling of its own. A no-op on Metricool, which owns its own
+    # schedule, so the job exits immediately unless the provider needs it.
+    - cron: '30 * * * *'
   workflow_dispatch:
     inputs:
       stages:
@@ -36,26 +40,29 @@ jobs:
 
       - run: npm ci
 
-      - name: Install ffmpeg
-        # The apt build includes libfreetype, so drawtext is available and
-        # captions are burned in. Skip it and the machine silently ships
-        # caption-less shorts.
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
-
-      - run: npm test
-
       - name: Decide stages
         id: plan
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            if [ "${{ github.event.schedule }}" = "0 6 * * 1" ]; then
-              echo "stages=research" >> "$GITHUB_OUTPUT"
-            else
-              echo "stages=write,design,post" >> "$GITHUB_OUTPUT"
-            fi
+            case "${{ github.event.schedule }}" in
+              '0 6 * * 1')  echo "stages=research" >> "$GITHUB_OUTPUT" ;;
+              '30 * * * *') echo "stages=drain" >> "$GITHUB_OUTPUT" ;;
+              *)            echo "stages=write,design,post" >> "$GITHUB_OUTPUT" ;;
+            esac
           else
             echo "stages=${{ inputs.stages }}" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Verify the code before running it for real
+        if: steps.plan.outputs.stages != 'drain'
+        run: npm test
+
+      - name: Install ffmpeg
+        if: steps.plan.outputs.stages != 'drain'
+        # The apt build includes libfreetype, so drawtext is available and
+        # captions are burned in. Skip it and the machine silently ships
+        # caption-less shorts.
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
 
       - name: Preflight
         id: preflight
@@ -75,6 +82,15 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           missing=""
+          if [ "$STAGES" = "drain" ]; then
+            # Only Unipile leaves anything to drain; Metricool schedules natively.
+            if [ "${{ vars.PUBLISH_PROVIDER }}" = "unipile" ]; then
+              echo "configured=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "configured=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
           case "$STAGES" in *research*) [ "$HAS_APIFY" = "true" ] || missing="$missing APIFY_TOKEN";; esac
           case "$STAGES" in *write*)    [ "$HAS_ANTHROPIC" = "true" ] || missing="$missing ANTHROPIC_API_KEY";; esac
           case "$STAGES" in *design*)   [ "$HAS_GEMINI" = "true" ] || missing="$missing GEMINI_API_KEY";; esac
@@ -111,9 +127,13 @@ jobs:
           UNIPILE_ACCOUNT_YOUTUBE: ${{ secrets.UNIPILE_ACCOUNT_YOUTUBE }}
           PUBLISH_TIMEZONE: ${{ vars.PUBLISH_TIMEZONE || 'America/New_York' }}
         run: |
-          node src/cli.js run \
-            --stages=${{ steps.plan.outputs.stages }} \
-            ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
+          if [ "${{ steps.plan.outputs.stages }}" = "drain" ]; then
+            node src/cli.js drain
+          else
+            node src/cli.js run \
+              --stages=${{ steps.plan.outputs.stages }} \
+              ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
+          fi
 
       - name: Upload rendered shorts
         if: always() && steps.preflight.outputs.configured == 'true'
