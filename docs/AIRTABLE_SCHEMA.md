@@ -3,7 +3,14 @@
 Only needed when `STORE_DRIVER=airtable`. With the default `json` driver the
 machine creates its own files and you can skip this entirely.
 
-## Build it with one command
+## Build it from the browser, no terminal needed
+
+Add `AIRTABLE_API_KEY` and `AIRTABLE_BASE_ID` as Actions secrets, then
+**Actions → the machine → Run workflow → tick `setup_airtable`**. The result
+appears on the run page. Safe to press again after a schema change: it adds
+what is missing and never deletes or retypes an existing field.
+
+## Or build it locally
 
 ```bash
 export AIRTABLE_API_KEY=pat...        # needs schema.bases:read + schema.bases:write
