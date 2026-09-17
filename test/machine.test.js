@@ -17,6 +17,9 @@ import { reportBatch } from '../src/lib/batch.js';
 import { rampedRate } from '../src/lib/ramp.js';
 import { toGeminiSchema, parseJSON, describeSchema, DeclinedError } from '../src/lib/writer/schema.js';
 import { TABLES, diffTable } from '../scripts/airtable-schema.js';
+import {
+  similarity, contentTokens, findDuplicate, corpusStopwords, DUPLICATE_THRESHOLD,
+} from '../src/lib/similarity.js';
 
 // --- 01 researcher ----------------------------------------------------------
 
@@ -573,4 +576,82 @@ test('diffTable catches a base whose primary field is not id', () => {
   const spec = TABLES[3];
   const table = { fields: [{ name: 'Name', type: 'singleLineText' }, ...spec.fields.map((f) => ({ name: f.name, type: f.type }))] };
   assert.equal(diffTable(spec, table).primaryOk, false);
+});
+
+// --- duplicate topics (a hard gate, not a prompt hint) ---------------------
+
+test('similarity catches a restatement and ignores a shared noun', () => {
+  const dupes = [
+    ['Most of the dust in your house used to be you', 'House dust is mostly dead human skin cells'],
+    ['Sharks existed before trees did', 'Sharks are older than trees by 100 million years'],
+    ['The shortest war lasted 38 minutes', 'The shortest war in history was 38 minutes long'],
+  ];
+  for (const [a, b] of dupes) {
+    assert.ok(similarity(a, b) >= DUPLICATE_THRESHOLD, `missed: ${a} ~ ${b}`);
+  }
+
+  const distinct = [
+    ['Most of the dust in your house used to be you', 'Your brain deletes memories on purpose'],
+    // Shares "trees" but is a different claim.
+    ['Sharks existed before trees did', 'Trees only evolved 350 million years ago'],
+    ['Bananas are radioactive', 'Venus has days longer than its years'],
+    ['Airport carpets are ugly for a reason', 'Cleopatra lived closer to the Moon landing'],
+  ];
+  for (const [a, b] of distinct) {
+    assert.ok(similarity(a, b) < DUPLICATE_THRESHOLD, `false positive: ${a} ~ ${b}`);
+  }
+});
+
+test('similarity is order-blind, because a rewrite reorders everything', () => {
+  assert.equal(similarity('dust is mostly dead skin', 'dead skin is mostly dust'), 1);
+});
+
+test('similarity is symmetric and safe on empty input', () => {
+  const a = 'sharks are older than trees';
+  const b = 'trees came after sharks';
+  assert.equal(similarity(a, b), similarity(b, a));
+  assert.equal(similarity('', a), 0);
+  assert.equal(similarity(a, ''), 0);
+  assert.equal(similarity('the and but', a), 0, 'stopwords alone carry no topic');
+});
+
+test('short words that carry the topic are kept', () => {
+  // A 4-letter floor dropped "war", "ice", "sun" - the whole subject.
+  assert.ok(contentTokens('the shortest war').has('war'));
+  assert.ok(contentTokens('ice is slippery').has('ice'));
+});
+
+test('plurals do not read as different topics', () => {
+  assert.equal(similarity('shark facts', 'a shark fact'), 1);
+});
+
+test('corpusStopwords strips house phrasing once there is a corpus to see it', () => {
+  const frame = (t) => ({ text: `${t} nobody mentions what actually happens` });
+  const corpus = ['Most Dust', 'Bananas Radioactive', 'Brain Deletes', 'Venus Days'].map(frame);
+  const common = corpusStopwords(corpus);
+  for (const word of ['nobody', 'mention', 'actually', 'happen']) {
+    assert.ok(common.has(word), `${word} should be recognised as boilerplate`);
+  }
+  assert.ok(!common.has('dust'), 'a topic word is not boilerplate');
+});
+
+test('corpusStopwords strips nothing from a corpus too small to judge', () => {
+  // Cold start: two scripts sharing a word is not evidence of house style,
+  // and stripping it would erase the very topic being compared.
+  assert.equal(corpusStopwords([{ text: 'most dust' }, { text: 'more dust' }]).size, 0);
+  assert.equal(corpusStopwords([]).size, 0);
+});
+
+test('findDuplicate returns the closest match, or null', () => {
+  const seen = ['Sharks and trees', 'Radioactive bananas', 'House dust and skin']
+    .map((t) => ({ text: t, tokens: contentTokens(t) }));
+
+  const hit = findDuplicate('Dust in the house is skin', seen);
+  assert.ok(hit);
+  assert.equal(hit.text, 'House dust and skin');
+  assert.ok(hit.score >= DUPLICATE_THRESHOLD);
+
+  assert.equal(findDuplicate('Cleopatra and the pyramids', seen), null);
+  assert.equal(findDuplicate('', seen), null, 'empty text is never a duplicate');
+  assert.equal(findDuplicate('anything', []), null, 'nothing to match against');
 });
