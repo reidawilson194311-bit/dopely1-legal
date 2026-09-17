@@ -43,7 +43,7 @@ Several can, so the provider is a config choice:
 
 | `COPY_PROVIDER` | Key | Notes |
 |---|---|---|
-| `gemini` *(default)* | `GEMINI_API_KEY` | **The same key skill 03 already needs.** No extra account, no extra billing. Defaults to `gemini-2.5-flash`. |
+| `gemini` *(default)* | `GEMINI_API_KEY` | **The same key skill 03 already needs.** No extra account, no extra billing. Defaults to `gemini-3.6-flash`. |
 | `openai-compatible` | `OPENAI_API_KEY` + `OPENAI_BASE_URL` | OpenAI, Groq, DeepSeek, Together, OpenRouter, Mistral, or a local llama.cpp / Ollama server — they all speak this shape. |
 | `anthropic` | `ANTHROPIC_API_KEY` | Uses the official SDK, lazily imported. |
 
@@ -62,8 +62,9 @@ putting the schema in the prompt, rather than failing.
 ## 4. Skill 03 — Gemini and ffmpeg
 
 `GEMINI_API_KEY` from aistudio.google.com. The default image model is
-`gemini-3-pro-image-preview` ("nano banana"), falling back automatically to
-`gemini-2.5-flash-image`.
+`gemini-2.5-flash-image` ("nano banana"), falling back automatically to
+`gemini-3-pro-image-preview`. The pro model is paid-tier and answers 429 on a
+free key, so it is the fallback rather than the default.
 
 ffmpeg needs to be a build **with libfreetype**, or captions are silently not
 burned in (the machine warns and continues). Check:

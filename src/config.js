@@ -104,8 +104,12 @@ export const config = {
   design: {
     /** Google's "nano banana" image model. */
     geminiApiKey: env('GEMINI_API_KEY'),
-    imageModel: env('GEMINI_IMAGE_MODEL', 'gemini-3-pro-image-preview'),
-    imageFallbackModel: env('GEMINI_IMAGE_FALLBACK_MODEL', 'gemini-2.5-flash-image'),
+    // gemini-2.5-flash-image IS nano banana, and it answers on a free key.
+    // gemini-3-pro-image-preview is paid-tier and returns 429, so it was
+    // costing a failed call plus the retry ladder on every single image
+    // before the fallback got a turn. Cheap one first, pro as the fallback.
+    imageModel: env('GEMINI_IMAGE_MODEL', 'gemini-2.5-flash-image'),
+    imageFallbackModel: env('GEMINI_IMAGE_FALLBACK_MODEL', 'gemini-3-pro-image-preview'),
     /** Art direction applied to every generated frame. */
     styleKey: env('DESIGN_STYLE', 'editorial-bold'),
     width: num('VIDEO_WIDTH', 1080),
