@@ -66,18 +66,36 @@ export async function generateJSON({ system, prompt, schema, model, maxTokens })
 export async function listModels() {
   const apiKey = config.design.geminiApiKey;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
-  // The doctor prints failures straight into a public job summary, and an
-  // HttpError carries the URL - key and all - in its message.
-  let res;
-  try {
-    res = await request(`${ENDPOINT}?key=${encodeURIComponent(apiKey)}&pageSize=200`, {
-      timeoutMs: 30000,
-    });
-  } catch (err) {
-    throw new Error(err.message.split(' - https://')[0]);
-  }
+  const res = await request(`${ENDPOINT}?key=${encodeURIComponent(apiKey)}&pageSize=200`, {
+    timeoutMs: 30000,
+  });
   return (res?.models || []).map((m) => ({
     name: String(m.name || '').replace(/^models\//, ''),
     methods: m.supportedGenerationMethods || [],
   }));
+}
+
+/**
+ * Actually call the model, with the smallest request that still proves it.
+ *
+ * The catalogue lists gemini-2.5-flash and :generateContent still 404s, so
+ * name-checking is not the same question. This asks the question that failed.
+ */
+export async function ping(model) {
+  const apiKey = config.design.geminiApiKey;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
+  const res = await request(
+    `${ENDPOINT}/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: 'Reply with the single word: ok' }] }],
+        generationConfig: { maxOutputTokens: 512 },
+      }),
+      timeoutMs: 60000,
+      retries: 0,
+    },
+  );
+  return (res?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
 }

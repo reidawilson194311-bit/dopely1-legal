@@ -18,7 +18,7 @@ import { drain } from './skills/04-poster.js';
 import { getStore, TABLES } from './lib/store/index.js';
 import { hasFfmpeg, hasDrawtext, findFont } from './lib/video.js';
 import { describeWriter } from './lib/writer/index.js';
-import { listModels, DEFAULT_MODEL as GEMINI_DEFAULT_MODEL } from './lib/writer/gemini.js';
+import { listModels, ping as geminiPing, DEFAULT_MODEL as GEMINI_DEFAULT_MODEL } from './lib/writer/gemini.js';
 
 function parseArgs(argv) {
   const flags = {};
@@ -103,14 +103,27 @@ async function doctor() {
 
       need(`Gemini key works (${models.length} models visible)`, true);
 
-      if (config.copy.provider === 'gemini') {
-        need(`copy model "${copyModel}" exists`, named.has(copyModel),
-          `this key sees: ${supports('generateContent').slice(0, 12).join(', ') || 'nothing that generates'} ` +
-            '- set COPY_MODEL to one of these');
-      }
-      need(`image model "${imageModel}" exists`, named.has(imageModel),
-        `this key sees: ${supports('predict').concat(supports('generateContent').filter((n) => /image/.test(n))).slice(0, 12).join(', ') || 'no image model'} ` +
-          '- set GEMINI_IMAGE_MODEL to one of these');
+      // Being in the catalogue is not the same question as being callable:
+      // gemini-2.5-flash is listed and :generateContent still 404s. So the
+      // check is a real call, and the catalogue only explains a failure.
+      const usable = supports('generateContent');
+      const check = async (label, model, envVar) => {
+        try {
+          await geminiPing(model);
+          need(`${label} "${model}" answers`, true);
+        } catch (err) {
+          need(`${label} "${model}" answers`, false,
+            `${err.message}\n       ` +
+              (named.has(model)
+                ? `it IS in the catalogue${usable.includes(model) ? ' and lists generateContent' : ", but does NOT list generateContent"}`
+                : 'it is NOT in the catalogue') +
+              `\n       models this key can generate with: ${usable.slice(0, 15).join(', ') || 'none'}` +
+              `\n       set ${envVar} to one of these`);
+        }
+      };
+
+      if (config.copy.provider === 'gemini') await check('copy model', copyModel, 'COPY_MODEL');
+      await check('image model', imageModel, 'GEMINI_IMAGE_MODEL');
     }
   }
 
