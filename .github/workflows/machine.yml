@@ -25,6 +25,14 @@ on:
         description: 'Only check credentials and tooling - no scraping, no generation, no spend'
         type: boolean
         default: false
+      voiceover:
+        description: 'Narrate this run with Gemini TTS (overrides TTS_PROVIDER for this run only)'
+        type: boolean
+        default: false
+      requeue:
+        description: 'Put already-designed scripts back in the queue so they can be rendered again'
+        type: boolean
+        default: false
       show:
         description: 'Print the latest scripts in full for review - reads only, generates nothing'
         type: boolean
@@ -82,6 +90,8 @@ jobs:
             echo "stages=probe-submagic" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.setup_airtable }}" = "true" ]; then
             echo "stages=setup-airtable" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.requeue }}" = "true" ]; then
+            echo "stages=requeue" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.show }}" = "true" ]; then
             echo "stages=show" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.doctor }}" = "true" ]; then
@@ -96,7 +106,8 @@ jobs:
           steps.plan.outputs.stages != 'doctor' &&
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
-          steps.plan.outputs.stages != 'show'
+          steps.plan.outputs.stages != 'show' &&
+          steps.plan.outputs.stages != 'requeue'
         run: npm test
 
       - name: Install ffmpeg
@@ -104,7 +115,8 @@ jobs:
           steps.plan.outputs.stages != 'drain' &&
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
-          steps.plan.outputs.stages != 'show'
+          steps.plan.outputs.stages != 'show' &&
+          steps.plan.outputs.stages != 'requeue'
         # Kept for `doctor` too: it reports on ffmpeg and the caption filter,
         # and that answer is only useful if it describes the environment a real run would get.
         # The apt build includes libfreetype, so drawtext is available and
@@ -130,7 +142,7 @@ jobs:
         run: |
           if [ "$DRY_RUN_INPUT" = "true" ] || [ "$STAGES" = "doctor" ] || \
              [ "$STAGES" = "setup-airtable" ] || [ "$STAGES" = "probe-submagic" ] || \
-             [ "$STAGES" = "show" ]; then
+             [ "$STAGES" = "show" ] || [ "$STAGES" = "requeue" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           missing=""
@@ -187,7 +199,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'none' }}
+          TTS_PROVIDER: ${{ inputs.voiceover && 'gemini' || vars.TTS_PROVIDER || 'none' }}
           TTS_API_KEY: ${{ secrets.TTS_API_KEY }}
           TTS_VOICE_ID: ${{ vars.TTS_VOICE_ID }}
           TTS_MODEL: ${{ vars.TTS_MODEL }}
@@ -223,6 +235,15 @@ jobs:
               echo
               echo '```'
               sed 's/\x1b\[[0-9;]*m//g' /tmp/airtable.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.plan.outputs.stages }}" = "requeue" ]; then
+            node src/cli.js requeue --limit=10 | tee /tmp/requeue.txt
+            {
+              echo '## Requeued'
+              echo
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' /tmp/requeue.txt
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ steps.plan.outputs.stages }}" = "show" ]; then
@@ -262,7 +283,8 @@ jobs:
           steps.plan.outputs.stages != 'doctor' &&
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
-          steps.plan.outputs.stages != 'show'
+          steps.plan.outputs.stages != 'show' &&
+          steps.plan.outputs.stages != 'requeue'
         uses: actions/upload-artifact@v4
         with:
           name: shorts-${{ github.run_id }}

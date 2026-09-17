@@ -8,7 +8,7 @@
  *   machine design              03 only
  *   machine post                04 only
  *   machine status              what is sitting in each table
- *   machine show                print the latest scripts in full, for review\n *   machine doctor              check credentials and tooling before a real run
+ *   machine show                print the latest scripts in full, for review\n *   machine requeue             put rows back a stage so it can run again\n *   machine doctor              check credentials and tooling before a real run
  *
  * Flags: --dry-run  --limit=N  --platforms=a,b  --stages=a,b  --verbose
  */
@@ -113,6 +113,29 @@ function safeParse(v) {
   } catch {
     return v;
   }
+}
+
+/**
+ * Put rows back in an earlier state so a later stage can run again.
+ *
+ * Each stage marks what it consumed, which is what stops the machine redoing
+ * work every night. That same mark makes a fixed pipeline unable to re-run over
+ * material already reviewed - the only alternative being to pay for fresh
+ * scripts that nobody has read.
+ */
+async function requeue({ table = 'scripts', from = 'designed', to = 'ready-to-design', limit = 10 } = {}) {
+  const store = getStore();
+  const rows = (await store.list(table, { where: (r) => r.status === from })).slice(0, limit);
+  if (!rows.length) {
+    console.log(`\n  nothing in ${table} with status "${from}"\n`);
+    return 0;
+  }
+  for (const r of rows) {
+    await store.patch(table, r.id, { status: to });
+    console.log(`  ${r.title || r.id}: ${from} -> ${to}`);
+  }
+  console.log(`\n  ${rows.length} row(s) requeued\n`);
+  return rows.length;
 }
 
 async function doctor() {
@@ -257,6 +280,7 @@ dopely1-shorts-machine - scrape, reword, design, post. 0 humans.
   machine drain     publish held posts whose slot is due (Unipile only)
   machine status
   machine show [--limit=N] [--table=scripts|winners|renders|posts]
+  machine requeue [--table=T] [--from=STATUS] [--to=STATUS] [--limit=N]
   machine doctor
 
   --dry-run          no external calls, no spend, nothing goes live
@@ -283,6 +307,15 @@ async function main() {
     return 0;
   }
   if (command === 'status') return (await status(), 0);
+  if (command === 'requeue') {
+    await requeue({
+      table: flags.table || 'scripts',
+      from: flags.from || 'designed',
+      to: flags.to || 'ready-to-design',
+      limit: Number(flags.limit) || 10,
+    });
+    return 0;
+  }
   if (command === 'show') {
     await show({ limit: Number(flags.limit) || 10, table: flags.table || 'scripts' });
     return 0;
