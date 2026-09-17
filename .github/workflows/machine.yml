@@ -25,6 +25,10 @@ on:
         description: 'Only check credentials and tooling - no scraping, no generation, no spend'
         type: boolean
         default: false
+      show:
+        description: 'Print the latest scripts in full for review - reads only, generates nothing'
+        type: boolean
+        default: false
       setup_airtable:
         description: 'Build the Airtable base (safe to re-run; never deletes or retypes a field)'
         type: boolean
@@ -78,6 +82,8 @@ jobs:
             echo "stages=probe-submagic" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.setup_airtable }}" = "true" ]; then
             echo "stages=setup-airtable" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.show }}" = "true" ]; then
+            echo "stages=show" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.doctor }}" = "true" ]; then
             echo "stages=doctor" >> "$GITHUB_OUTPUT"
           else
@@ -89,14 +95,16 @@ jobs:
           steps.plan.outputs.stages != 'drain' &&
           steps.plan.outputs.stages != 'doctor' &&
           steps.plan.outputs.stages != 'setup-airtable' &&
-          steps.plan.outputs.stages != 'probe-submagic'
+          steps.plan.outputs.stages != 'probe-submagic' &&
+          steps.plan.outputs.stages != 'show'
         run: npm test
 
       - name: Install ffmpeg
         if: >-
           steps.plan.outputs.stages != 'drain' &&
           steps.plan.outputs.stages != 'setup-airtable' &&
-          steps.plan.outputs.stages != 'probe-submagic'
+          steps.plan.outputs.stages != 'probe-submagic' &&
+          steps.plan.outputs.stages != 'show'
         # Kept for `doctor` too: it reports on ffmpeg and the caption filter,
         # and that answer is only useful if it describes the environment a real run would get.
         # The apt build includes libfreetype, so drawtext is available and
@@ -121,7 +129,8 @@ jobs:
           STAGES: ${{ steps.plan.outputs.stages }}
         run: |
           if [ "$DRY_RUN_INPUT" = "true" ] || [ "$STAGES" = "doctor" ] || \
-             [ "$STAGES" = "setup-airtable" ] || [ "$STAGES" = "probe-submagic" ]; then
+             [ "$STAGES" = "setup-airtable" ] || [ "$STAGES" = "probe-submagic" ] || \
+             [ "$STAGES" = "show" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           missing=""
@@ -215,6 +224,16 @@ jobs:
               sed 's/\x1b\[[0-9;]*m//g' /tmp/airtable.txt
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.plan.outputs.stages }}" = "show" ]; then
+            # Reads the store and prints it. No model calls, no spend.
+            node src/cli.js show --limit=10 | tee /tmp/show.txt
+            {
+              echo '## The batch'
+              echo
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' /tmp/show.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ steps.plan.outputs.stages }}" = "doctor" ]; then
             # Read-only: reports which credentials this runner can actually see.
             # Its non-zero exit means "something is missing", which is the
@@ -241,7 +260,8 @@ jobs:
           always() && steps.preflight.outputs.configured == 'true' &&
           steps.plan.outputs.stages != 'doctor' &&
           steps.plan.outputs.stages != 'setup-airtable' &&
-          steps.plan.outputs.stages != 'probe-submagic'
+          steps.plan.outputs.stages != 'probe-submagic' &&
+          steps.plan.outputs.stages != 'show'
         uses: actions/upload-artifact@v4
         with:
           name: shorts-${{ github.run_id }}
