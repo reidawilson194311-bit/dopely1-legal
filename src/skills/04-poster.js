@@ -50,7 +50,7 @@ export function composeCaption(render, platform) {
  */
 export async function drain({
   store = getStore(),
-  platforms = config.platforms,
+  platforms = config.post.platforms,
   now = new Date(),
   // Injectable so the publish path can be tested without a live account -
   // this is the code whose absence meant Unipile never uploaded anything.
@@ -109,7 +109,7 @@ export async function drain({
   return published;
 }
 
-export async function post({ limit, platforms = config.platforms } = {}) {
+export async function post({ limit, platforms = config.post.platforms } = {}) {
   log.banner('SKILL 04 / THE POSTER', 'It posts itself.');
   const store = getStore();
 
