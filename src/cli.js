@@ -73,6 +73,7 @@ async function show({ limit = 10, table = 'scripts' } = {}) {
     console.log(`\n${'='.repeat(70)}`);
     console.log(`${r.title || r.id}`);
     console.log(`${'='.repeat(70)}`);
+    console.log(`${'id'.padEnd(10)} ${r.id}`); // `patch` needs this to aim at a row
     const line = (k, v) => v && console.log(`${k.padEnd(10)} ${v}`);
     line('pillar', r.pillar);
     line('status', r.status);

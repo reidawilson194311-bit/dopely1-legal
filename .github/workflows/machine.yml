@@ -30,9 +30,21 @@ on:
         type: boolean
         default: false
       requeue:
-        description: 'Put already-designed scripts back in the queue so they can be rendered again'
+        description: 'Move rows between statuses (defaults: scripts, designed -> ready-to-design)'
         type: boolean
         default: false
+      requeue_table:
+        description: 'Which table to requeue: scripts | winners | renders | posts'
+        type: string
+        required: false
+      requeue_from:
+        description: 'Status to move rows OUT of'
+        type: string
+        required: false
+      requeue_to:
+        description: 'Status to move rows IN to'
+        type: string
+        required: false
       show:
         description: 'Print the latest scripts in full for review - reads only, generates nothing'
         type: boolean
@@ -238,7 +250,11 @@ jobs:
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ steps.plan.outputs.stages }}" = "requeue" ]; then
-            node src/cli.js requeue --limit=10 | tee /tmp/requeue.txt
+            node src/cli.js requeue --limit=25 \
+              ${{ inputs.requeue_table && format('--table={0}', inputs.requeue_table) || '' }} \
+              ${{ inputs.requeue_from && format('--from={0}', inputs.requeue_from) || '' }} \
+              ${{ inputs.requeue_to && format('--to={0}', inputs.requeue_to) || '' }} \
+              | tee /tmp/requeue.txt
             {
               echo '## Requeued'
               echo
