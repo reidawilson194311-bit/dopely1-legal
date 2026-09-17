@@ -8,6 +8,7 @@ import { wrapCaption, buildFilterGraph } from '../src/lib/video.js';
 import { composeCaption, drain } from '../src/skills/04-poster.js';
 import { buildPlatforms, batched } from '../src/lib/publishers/submagic.js';
 import { wavHeader, pcmRate } from '../src/lib/tts.js';
+import { env } from '../src/config.js';
 import { createJsonStore } from '../src/lib/store/jsonStore.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -754,4 +755,31 @@ test('an unparseable mime type falls back rather than producing NaN', () => {
   assert.equal(pcmRate('audio/L16'), 24000);
   assert.equal(pcmRate(undefined), 24000);
   assert.equal(pcmRate(''), 24000);
+});
+
+// --- config: an unset Actions variable arrives as '' ----------------------
+
+test('an empty environment variable falls back to the default', () => {
+  // `FOO: ${{ vars.FOO }}` with no FOO set exports FOO= , not nothing. Reading
+  // that with ?? kept the empty string and silently dropped four defaults.
+  process.env.__MACHINE_TEST_EMPTY = '';
+  assert.equal(env('__MACHINE_TEST_EMPTY', 'fallback'), 'fallback');
+  delete process.env.__MACHINE_TEST_EMPTY;
+});
+
+test('an absent environment variable falls back to the default', () => {
+  delete process.env.__MACHINE_TEST_ABSENT;
+  assert.equal(env('__MACHINE_TEST_ABSENT', 'fallback'), 'fallback');
+});
+
+test('a set environment variable still wins over the default', () => {
+  process.env.__MACHINE_TEST_SET = 'chosen';
+  assert.equal(env('__MACHINE_TEST_SET', 'fallback'), 'chosen');
+  delete process.env.__MACHINE_TEST_SET;
+});
+
+test('a falsy but meaningful value is not mistaken for absent', () => {
+  process.env.__MACHINE_TEST_ZERO = '0';
+  assert.equal(env('__MACHINE_TEST_ZERO', 'fallback'), '0');
+  delete process.env.__MACHINE_TEST_ZERO;
 });

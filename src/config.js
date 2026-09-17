@@ -20,7 +20,19 @@ function loadDotenv(file = '.env') {
 }
 loadDotenv();
 
-const env = (k, d = '') => process.env[k] ?? d;
+/**
+ * An unset GitHub Actions variable arrives as an EMPTY STRING, not as an absent
+ * one - `FOO: ${{ vars.FOO }}` with no FOO set exports `FOO=`. `??` only falls
+ * back on null/undefined, so every default below was being replaced by '' in
+ * CI while working fine locally. That is how TTS_MODEL became '' and the
+ * narration request went to `models/:generateContent`.
+ *
+ * num/bool/list already treat empty as absent; this brings env into line.
+ */
+export const env = (k, d = '') => {
+  const v = process.env[k];
+  return v === undefined || v === '' ? d : v;
+};
 const num = (k, d) => (process.env[k] ? Number(process.env[k]) : d);
 const bool = (k, d = false) => (process.env[k] ? /^(1|true|yes|on)$/i.test(process.env[k]) : d);
 const list = (k, d = []) =>
