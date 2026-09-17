@@ -7,6 +7,7 @@ import { overlapRatio } from '../src/skills/02-copywriter.js';
 import { wrapCaption, buildFilterGraph } from '../src/lib/video.js';
 import { composeCaption, drain } from '../src/skills/04-poster.js';
 import { buildPlatforms, batched } from '../src/lib/publishers/submagic.js';
+import { wavHeader, pcmRate } from '../src/lib/tts.js';
 import { createJsonStore } from '../src/lib/store/jsonStore.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -712,4 +713,45 @@ test('buildPlatforms tolerates a missing caption', () => {
   const p = buildPlatforms([{ platform: 'instagram' }]);
   assert.equal(p.instagram.content, '');
   assert.equal(p.instagram.format, 'reel');
+});
+
+// --- gemini tts: raw PCM has to become something ffmpeg will open ----------
+
+test('the wav header describes the PCM that follows it', () => {
+  const dataLength = 48000;
+  const h = wavHeader({ dataLength, sampleRate: 24000 });
+
+  assert.equal(h.length, 44);
+  assert.equal(h.toString('ascii', 0, 4), 'RIFF');
+  assert.equal(h.toString('ascii', 8, 12), 'WAVE');
+  assert.equal(h.toString('ascii', 36, 40), 'data');
+  assert.equal(h.readUInt32LE(4), 36 + dataLength, 'RIFF size covers header + data');
+  assert.equal(h.readUInt32LE(40), dataLength, 'data chunk size is the payload');
+  assert.equal(h.readUInt16LE(20), 1, 'format 1 = uncompressed PCM');
+  assert.equal(h.readUInt16LE(22), 1, 'mono');
+  assert.equal(h.readUInt32LE(24), 24000, 'sample rate');
+  assert.equal(h.readUInt16LE(34), 16, 'bits per sample');
+  // 24000 Hz x 1 channel x 2 bytes. A wrong byte rate plays at the wrong speed
+  // rather than failing, so it is worth pinning.
+  assert.equal(h.readUInt32LE(28), 48000, 'byte rate');
+  assert.equal(h.readUInt16LE(32), 2, 'block align');
+});
+
+test('stereo and bit depth change the derived rates together', () => {
+  const h = wavHeader({ dataLength: 100, sampleRate: 44100, channels: 2, bitsPerSample: 16 });
+  assert.equal(h.readUInt16LE(32), 4, 'block align = channels x bytes per sample');
+  assert.equal(h.readUInt32LE(28), 44100 * 4);
+});
+
+test('the sample rate is read out of the mime type', () => {
+  assert.equal(pcmRate('audio/L16;codec=pcm;rate=24000'), 24000);
+  assert.equal(pcmRate('audio/L16;codec=pcm;rate=16000'), 16000);
+});
+
+test('an unparseable mime type falls back rather than producing NaN', () => {
+  // NaN would sail into writeUInt32LE and throw, losing the whole batch for
+  // the sake of one unexpected header.
+  assert.equal(pcmRate('audio/L16'), 24000);
+  assert.equal(pcmRate(undefined), 24000);
+  assert.equal(pcmRate(''), 24000);
 });

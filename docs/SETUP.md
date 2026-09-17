@@ -79,9 +79,18 @@ ffmpeg -filters | grep drawtext
 Captions also need a bold TTF. The machine looks for DejaVu, Liberation and
 Arial in the usual places; set `CAPTION_FONT=/path/to/Bold.ttf` otherwise.
 
-Voiceover is off by default. Turn it on with `TTS_PROVIDER=elevenlabs` plus
-`TTS_API_KEY` and `TTS_VOICE_ID`, or `TTS_PROVIDER=openai-compatible` plus
-`TTS_BASE_URL`. With voiceover on, beat durations come from the real audio
+Voiceover is off by default, and off means **silent video**: the scripts still
+carry a voiceover line per beat, but with no TTS it only sets how long each
+frame holds. `doctor` says so explicitly.
+
+The cheapest way to turn it on is `TTS_PROVIDER=gemini`, which narrates using
+`GEMINI_API_KEY` - the same key that writes the copy and draws the pictures, so
+there is no second account. It needs the paid tier, like image generation does.
+Pick a voice with `TTS_VOICE_ID` (default `Kore`) and a model with `TTS_MODEL`
+(default `gemini-2.5-flash-preview-tts`).
+
+Otherwise: `TTS_PROVIDER=elevenlabs` plus `TTS_API_KEY` and `TTS_VOICE_ID`, or
+`TTS_PROVIDER=openai-compatible` plus `TTS_BASE_URL`. With voiceover on, beat durations come from the real audio
 length instead of a word-count estimate, so the captions stay in sync.
 
 ## 5. Skill 04 — a publisher
