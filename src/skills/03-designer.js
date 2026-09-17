@@ -105,6 +105,16 @@ async function buildOne(script, store) {
   };
 
   fs.writeFileSync(path.join(dir, 'script.json'), JSON.stringify({ ...script, render: row }, null, 2));
+
+  // Store the render BEFORE marking its script consumed, one item at a time.
+  //
+  // These used to be the other way round, with a single batched upsert after
+  // the loop. When that write failed - Airtable rejects the whole batch for one
+  // unknown column - every script in the batch was already marked `designed`
+  // while not one render had been saved. Four shorts, their images and their
+  // narration, all paid for and unreachable, with no way back but a manual
+  // requeue. In this order a failure leaves the script exactly as it was found.
+  await store.upsert(TABLES.RENDERS, [row]);
   await store.patch(TABLES.SCRIPTS, script.id, { status: video ? 'designed' : 'needs-encode' });
   return row;
 }
@@ -141,7 +151,6 @@ export async function design({ limit = config.design.batchSize } = {}) {
     }
   }
 
-  if (rendered.length) await store.upsert(TABLES.RENDERS, rendered);
   log.info(`OUTPUT: ${rendered.length} shorts in ${config.outDir}`);
 
   // speak() swallows a failed beat on purpose - losing one voiceover is better
