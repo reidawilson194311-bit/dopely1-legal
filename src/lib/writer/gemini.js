@@ -6,7 +6,10 @@ import { toGeminiSchema, parseJSON, DeclinedError } from './schema.js';
 const log = logger('writer:gemini');
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-export const DEFAULT_MODEL = 'gemini-2.5-flash';
+// gemini-2.5-flash 404s for keys created after its retirement, and says so:
+// "no longer available to new users ... use models/gemini-3.6-flash". Taking
+// the API at its word rather than pinning something else that will age out.
+export const DEFAULT_MODEL = 'gemini-3.6-flash';
 
 /**
  * The same key already generates the visuals in skill 03, so choosing Gemini

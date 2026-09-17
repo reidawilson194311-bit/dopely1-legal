@@ -35,8 +35,9 @@ export function buildPrompt(imagePrompt, styleKey = config.design.styleKey) {
   return `${imagePrompt}\n\nSTYLE: ${style}\n\nCONSTRAINTS: ${GUARDRAILS}`;
 }
 
-async function callGemini(model, prompt, apiKey) {
+async function callGemini(model, prompt, apiKey, { retries } = {}) {
   const res = await request(`${ENDPOINT}/${model}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+    retries,
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -76,7 +77,10 @@ export async function generateImage(imagePrompt, outPath, { styleKey } = {}) {
 
   let result;
   try {
-    result = await callGemini(config.design.imageModel, prompt, apiKey);
+    // One retry, not four: a quota 429 on the primary is not going to clear in
+    // 30s of backoff, and paying that ladder per image costs more than the
+    // fallback it is delaying.
+    result = await callGemini(config.design.imageModel, prompt, apiKey, { retries: 1 });
   } catch (err) {
     log.warn(`${config.design.imageModel} failed, trying ${config.design.imageFallbackModel}`, err.message);
     result = await callGemini(config.design.imageFallbackModel, prompt, apiKey);

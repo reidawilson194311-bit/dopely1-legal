@@ -13,7 +13,7 @@ export class HttpError extends Error {
     // whether it is the model, the API version or the method that is wrong.
     // Callers only ever logged `.message`, so that answer was thrown away and
     // every failure had to be diagnosed by guesswork.
-    const detail = String(body || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    const detail = String(body || '').replace(/\s+/g, ' ').trim().slice(0, 500);
     super(`${status} ${statusText} - ${redactUrl(url)}${detail ? ` - ${detail}` : ''}`);
     this.name = 'HttpError';
     this.status = status;
