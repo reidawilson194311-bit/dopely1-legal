@@ -20,6 +20,7 @@ import { getStore, TABLES } from '../lib/store/index.js';
 import { generateImage } from '../lib/nanobanana.js';
 import { speak, estimateDuration } from '../lib/tts.js';
 import { assemble, hasFfmpeg, probeDuration, FfmpegMissingError } from '../lib/video.js';
+import { hostVideo } from '../lib/host/githubRelease.js';
 import { newId } from '../lib/id.js';
 import { reportBatch } from '../lib/batch.js';
 
@@ -63,6 +64,25 @@ async function buildOne(script, store) {
     log.warn('ffmpeg missing - storyboard saved, video not encoded');
   }
 
+  // Host it NOW, while the file still exists.
+  //
+  // A CI runner is destroyed when its job ends, so `videoPath` is meaningless
+  // to any later job - and the poster runs later by design: the ramp posts
+  // fewer videos per run than the designer renders, so there is always a
+  // backlog whose files have already gone. Publishing that backlog used to
+  // fail with "rendered video missing" pointing at a path on a machine that no
+  // longer exists. A URL survives the runner; a path does not.
+  let videoUrl = null;
+  if (video && config.host.githubToken && config.host.repo) {
+    try {
+      videoUrl = await hostVideo(video.path);
+    } catch (err) {
+      // Not fatal here: the short is rendered and stored either way, and a
+      // post in the same job can still publish from disk.
+      log.warn(`could not host ${script.slug} for later publishing`, err.message);
+    }
+  }
+
   const row = {
     id: newId('rnd'),
     scriptId: script.id,
@@ -73,6 +93,7 @@ async function buildOne(script, store) {
     dir,
     frames: beats.map((b) => b.imagePath),
     videoPath: video?.path || null,
+    videoUrl,
     durationSec: video?.durationSec ?? Number(beats.reduce((s, b) => s + b.durationSec, 0).toFixed(2)),
     hasAudio: Boolean(video?.hasAudio),
     captions: script.captions,

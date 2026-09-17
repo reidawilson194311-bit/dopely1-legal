@@ -189,6 +189,7 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
           caption,
           youtubeTitle: render.youtubeTitle,
           videoPath: render.videoPath,
+          uploadedUrl: render.videoUrl || null,
           publishAt: when.toISOString(),
           publishAtLocal: formatLocal(when),
           timezone: config.post.timezone,
@@ -202,7 +203,10 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
     }
   }
 
-  const haveVideo = (render) => render.videoPath && fs.existsSync(render.videoPath);
+  // A hosted URL outlives the runner that rendered the video; the local path
+  // does not. Either is enough to publish from.
+  const haveVideo = (render) =>
+    Boolean(render.videoUrl) || Boolean(render.videoPath && fs.existsSync(render.videoPath));
   const announce = (row) =>
     log.info(`  ${row.platform.padEnd(9)} ${row.publishAtLocal} ${config.post.timezone}  "${row.title}"`);
 
@@ -219,9 +223,14 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
     for (const group of byRender.values()) {
       const { render } = group[0];
       try {
-        if (!haveVideo(render)) throw new Error(`rendered video missing: ${render.videoPath}`);
+        if (!haveVideo(render)) {
+          throw new Error(
+            `rendered video missing: no hosted URL and no file at ${render.videoPath}`,
+          );
+        }
         const res = await provider.scheduleBatch({
           videoPath: render.videoPath,
+          uploadedUrl: render.videoUrl || null,
           title: render.title,
           entries: group.map(({ row }) => ({
             platform: row.platform,
@@ -257,13 +266,18 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
     for (const { render, when, row } of planned) {
       try {
         if (provider) {
-          if (!haveVideo(render)) throw new Error(`rendered video missing: ${render.videoPath}`);
+          if (!haveVideo(render)) {
+            throw new Error(
+              `rendered video missing: no hosted URL and no file at ${render.videoPath}`,
+            );
+          }
           const payload = {
             platform: row.platform,
             caption: row.caption,
             publishAt: when,
             youtubeTitle: render.youtubeTitle,
             videoPath: render.videoPath,
+            uploadedUrl: render.videoUrl || null,
           };
           // Metricool schedules from a hosted URL; Unipile takes the file.
           if (provider.name === 'metricool') {
