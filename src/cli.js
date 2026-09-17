@@ -17,6 +17,7 @@ import { run, STAGES } from './machine.js';
 import { drain } from './skills/04-poster.js';
 import { getStore, TABLES } from './lib/store/index.js';
 import { hasFfmpeg, hasDrawtext, findFont } from './lib/video.js';
+import { ping as ttsPing } from './lib/tts.js';
 import { describeWriter } from './lib/writer/index.js';
 import { listModels, ping as geminiPing, DEFAULT_MODEL as GEMINI_DEFAULT_MODEL } from './lib/writer/gemini.js';
 
@@ -248,16 +249,22 @@ async function doctor() {
 
       if (config.copy.provider === 'gemini') await check('copy model', copyModel, 'COPY_MODEL');
       await check('image model', imageModel, 'GEMINI_IMAGE_MODEL');
-      if (config.design.ttsProvider === 'gemini') {
-        await check('voice model', config.design.ttsModel, 'TTS_MODEL');
-      }
+
     }
   }
 
   // Silent shorts are a legitimate format, but they are rarely what anyone
   // meant to ship - so say which one is about to be produced.
   if (config.design.ttsProvider !== 'none') {
-    need(`voiceover: ${config.design.ttsProvider}/${config.design.ttsModel}`, true);
+    // Speak for real. A TTS model refuses the text-shaped ping the other two
+    // models answer, so checking it that way reports a failure that is not
+    // there - and a check that cries wolf is worse than no check.
+    try {
+      const { bytes } = await ttsPing();
+      need(`voiceover: ${config.design.ttsProvider}/${config.design.ttsModel} (${bytes} bytes)`, true);
+    } catch (err) {
+      need(`voiceover: ${config.design.ttsProvider}/${config.design.ttsModel}`, false, err.message);
+    }
   }
   if (config.design.ttsProvider === 'none') {
     need('voiceover (skill 03)', false,
