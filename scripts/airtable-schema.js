@@ -96,7 +96,9 @@ export const TABLES = [
   },
   {
     name: 'Renders',
-    description: 'Skill 03. Encoded shorts. videoPath is local to the machine that rendered it.',
+    description:
+      'Skill 03. Encoded shorts. videoPath is local to the machine that rendered it and ' +
+      'does not survive it; videoUrl is the hosted copy the poster publishes from.',
     fields: [
       text('id'),
       text('scriptId'),
@@ -106,6 +108,9 @@ export const TABLES = [
       text('dir'),
       long('frames'),
       text('videoPath'),
+      // Hosted at render time, because the runner that holds videoPath is
+      // destroyed before the poster's turn comes round.
+      text('videoUrl'),
       dec('durationSec', 2),
       check('hasAudio'),
       long('captions'),

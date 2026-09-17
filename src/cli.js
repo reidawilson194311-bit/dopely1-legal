@@ -18,6 +18,8 @@ import { drain } from './skills/04-poster.js';
 import { getStore, TABLES } from './lib/store/index.js';
 import { hasFfmpeg, hasDrawtext, findFont } from './lib/video.js';
 import { ping as ttsPing } from './lib/tts.js';
+import { request } from './lib/http.js';
+import SCHEMA, { diffTable } from '../scripts/airtable-schema.js';
 import { describeWriter } from './lib/writer/index.js';
 import { listModels, ping as geminiPing, DEFAULT_MODEL as GEMINI_DEFAULT_MODEL } from './lib/writer/gemini.js';
 
@@ -310,9 +312,31 @@ async function doctor() {
   }
 
   if (config.store.driver === 'airtable') {
-    need('Airtable credentials',
-      Boolean(config.store.airtable.apiKey && config.store.airtable.baseId),
+    const { apiKey, baseId } = config.store.airtable;
+    need('Airtable credentials', Boolean(apiKey && baseId),
       'set AIRTABLE_API_KEY and AIRTABLE_BASE_ID');
+
+    // A field added to a row shape but not to the base fails the whole upsert
+    // with UNKNOWN_FIELD_NAME - after the render has already been paid for and
+    // encoded. Cheaper to find it here.
+    if (apiKey && baseId) {
+      try {
+        const res = await request(
+          `https://api.airtable.com/v0/meta/bases/${baseId}/tables`,
+          { headers: { authorization: `Bearer ${apiKey}` }, timeoutMs: 30000, retries: 1 },
+        );
+        const live = new Map((res?.tables || []).map((t) => [t.name.toLowerCase(), t]));
+        const gaps = SCHEMA.flatMap((spec) => {
+          const d = diffTable(spec, live.get(spec.name.toLowerCase()));
+          return d.missing.map((f) => `${spec.name}.${f.name}`);
+        });
+        need(`Airtable schema matches the code${gaps.length ? '' : ` (${SCHEMA.length} tables)`}`,
+          gaps.length === 0,
+          `missing: ${gaps.join(', ')} - run the workflow with setup_airtable to add them`);
+      } catch (err) {
+        need('Airtable schema matches the code', false, `could not read the base: ${err.message}`);
+      }
+    }
   }
 
   console.log('');
