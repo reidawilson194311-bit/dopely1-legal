@@ -92,7 +92,13 @@ async function doctor() {
   }
 
   const provider = config.post.provider;
-  if (provider === 'metricool') {
+  if (provider === 'submagic') {
+    need('Submagic credentials (skill 04)', Boolean(config.post.submagic.apiKey),
+      'set SUBMAGIC_API_KEY');
+    need('somewhere to host rendered video', Boolean(config.host.githubToken && config.host.repo),
+      'Submagic fetches video from a URL. Actions supplies GITHUB_TOKEN and ' +
+        'GITHUB_REPOSITORY automatically; set both if running elsewhere.');
+  } else if (provider === 'metricool') {
     need('Metricool credentials (skill 04)',
       Boolean(config.post.metricool.token && config.post.metricool.userId && config.post.metricool.blogId),
       'set METRICOOL_USER_TOKEN, METRICOOL_USER_ID, METRICOOL_BLOG_ID');

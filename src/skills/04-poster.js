@@ -17,10 +17,11 @@ import { reportBatch } from '../lib/batch.js';
 import { rampedRate, rampNote } from '../lib/ramp.js';
 import metricool from '../lib/publishers/metricool.js';
 import unipile from '../lib/publishers/unipile.js';
+import submagic from '../lib/publishers/submagic.js';
 
 const log = logger('04-post');
 
-const PUBLISHERS = { metricool, unipile };
+const PUBLISHERS = { submagic, metricool, unipile };
 
 /** Trim a caption to the platform's limit and append its hashtags. */
 export function composeCaption(render, platform) {
@@ -163,6 +164,10 @@ export async function post({ limit, platforms = config.platforms } = {}) {
 
   const scheduled = [];
   const errors = [];
+
+  // Plan every row first, provider-agnostic. Which platform goes out when is
+  // the machine's decision; how it gets there is the publisher's.
+  const planned = [];
   for (const platform of platforms) {
     const slots = nextSlots(platform, renders.length, takenByPlatform.get(platform) || []);
     for (const [i, render] of renders.entries()) {
@@ -172,39 +177,98 @@ export async function post({ limit, platforms = config.platforms } = {}) {
         break;
       }
       const caption = composeCaption(render, platform);
-      const row = {
-        id: newId('pst'),
-        renderId: render.id,
-        scriptId: render.scriptId,
-        platform,
-        title: render.title,
-        caption,
-        youtubeTitle: render.youtubeTitle,
-        videoPath: render.videoPath,
-        publishAt: when.toISOString(),
-        publishAtLocal: formatLocal(when),
-        timezone: config.post.timezone,
-        provider: provider?.name || 'local-queue',
-        // 'queued' means we still owe this upload; 'scheduled' means the
-        // provider owns it from here. Only 'queued' is ever drained.
-        status: provider ? 'scheduled' : 'queued',
-        externalId: null,
-      };
+      planned.push({
+        render,
+        when,
+        row: {
+          id: newId('pst'),
+          renderId: render.id,
+          scriptId: render.scriptId,
+          platform,
+          title: render.title,
+          caption,
+          youtubeTitle: render.youtubeTitle,
+          videoPath: render.videoPath,
+          publishAt: when.toISOString(),
+          publishAtLocal: formatLocal(when),
+          timezone: config.post.timezone,
+          provider: provider?.name || 'local-queue',
+          // 'queued' means we still owe this upload; 'scheduled' means the
+          // provider owns it from here. Only 'queued' is ever drained.
+          status: provider ? 'scheduled' : 'queued',
+          externalId: null,
+        },
+      });
+    }
+  }
 
+  const haveVideo = (render) => render.videoPath && fs.existsSync(render.videoPath);
+  const announce = (row) =>
+    log.info(`  ${row.platform.padEnd(9)} ${row.publishAtLocal} ${config.post.timezone}  "${row.title}"`);
+
+  if (provider?.batched) {
+    // One upload, one project, every platform in a single call. Three separate
+    // projects for one video would triple the account's usage to stagger the
+    // posts by a couple of hours.
+    const byRender = new Map();
+    for (const item of planned) {
+      if (!byRender.has(item.render.id)) byRender.set(item.render.id, []);
+      byRender.get(item.render.id).push(item);
+    }
+
+    for (const group of byRender.values()) {
+      const { render } = group[0];
+      try {
+        if (!haveVideo(render)) throw new Error(`rendered video missing: ${render.videoPath}`);
+        const res = await provider.scheduleBatch({
+          videoPath: render.videoPath,
+          title: render.title,
+          entries: group.map(({ row }) => ({
+            platform: row.platform,
+            caption: row.caption,
+            youtubeTitle: row.youtubeTitle,
+            publishAt: row.publishAt,
+          })),
+        });
+        for (const { row } of group) {
+          row.externalId = res.externalId;
+          // All platforms in a batch share one publish time.
+          if (res.scheduledFor) {
+            row.publishAt = res.scheduledFor;
+            row.publishAtLocal = formatLocal(new Date(res.scheduledFor));
+          } else {
+            row.status = 'published';
+            row.publishedAt = new Date().toISOString();
+          }
+          scheduled.push(row);
+          announce(row);
+        }
+      } catch (err) {
+        for (const { row } of group) {
+          row.status = 'schedule-failed';
+          row.error = err.message;
+          scheduled.push(row);
+        }
+        log.error(`  "${render.title}" failed`, err.message);
+        errors.push(`${render.title}: ${err.message}`);
+      }
+    }
+  } else {
+    for (const { render, when, row } of planned) {
       try {
         if (provider) {
-          if (!render.videoPath || !fs.existsSync(render.videoPath)) {
-            throw new Error(`rendered video missing: ${render.videoPath}`);
-          }
+          if (!haveVideo(render)) throw new Error(`rendered video missing: ${render.videoPath}`);
           const payload = {
-            platform,
-            caption,
+            platform: row.platform,
+            caption: row.caption,
             publishAt: when,
             youtubeTitle: render.youtubeTitle,
             videoPath: render.videoPath,
           };
           // Metricool schedules from a hosted URL; Unipile takes the file.
-          if (provider.name === 'metricool') payload.videoUrl = await provider.uploadMedia(render.videoPath);
+          if (provider.name === 'metricool') {
+            payload.videoUrl = await provider.uploadMedia(render.videoPath);
+          }
           const res = await provider.schedule(payload);
           row.externalId = res.externalId;
           if (res.queuedLocally) {
@@ -218,13 +282,13 @@ export async function post({ limit, platforms = config.platforms } = {}) {
           }
         }
         scheduled.push(row);
-        log.info(`  ${platform.padEnd(9)} ${row.publishAtLocal} ${config.post.timezone}  "${render.title}"`);
+        announce(row);
       } catch (err) {
         row.status = 'schedule-failed';
         row.error = err.message;
         scheduled.push(row);
-        log.error(`  ${platform} scheduling failed`, err.message);
-        errors.push(`${platform}: ${err.message}`);
+        log.error(`  ${row.platform} scheduling failed`, err.message);
+        errors.push(`${row.platform}: ${err.message}`);
       }
     }
   }

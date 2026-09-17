@@ -85,6 +85,21 @@ length instead of a word-count estimate, so the captions stay in sync.
 
 ## 5. Skill 04 — a publisher
 
+**Submagic** — `SUBMAGIC_API_KEY`, and set `PUBLISH_PROVIDER=submagic`.
+Connect Instagram, TikTok and YouTube inside Submagic; the machine publishes to
+whichever are connected and skips the rest.
+
+Submagic fetches video by URL rather than accepting an upload, so each rendered
+short is attached to a GitHub release first and published from there. On Actions
+that needs nothing from you - the workflow grants itself `contents: write` and
+uses the token Actions already provides. Note this makes the rendered videos
+publicly downloadable from the repository's releases page, which is fine for
+content that is about to be public anyway.
+
+One Submagic project carries every platform for a video, so all platforms go out
+at the same time - the earliest slot the machine picked - rather than staggered.
+Three projects per video would triple usage to gain a two-hour spread.
+
 **Metricool** — one account covers all three platforms and it schedules
 natively. You need `METRICOOL_USER_TOKEN`, `METRICOOL_USER_ID` and
 `METRICOOL_BLOG_ID` (the brand id). Set `PUBLISH_PROVIDER=metricool`.

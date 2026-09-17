@@ -6,6 +6,7 @@ import { normalize, extractHook } from '../src/lib/normalize.js';
 import { overlapRatio } from '../src/skills/02-copywriter.js';
 import { wrapCaption, buildFilterGraph } from '../src/lib/video.js';
 import { composeCaption, drain } from '../src/skills/04-poster.js';
+import { buildPlatforms, batched } from '../src/lib/publishers/submagic.js';
 import { createJsonStore } from '../src/lib/store/jsonStore.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -654,4 +655,61 @@ test('findDuplicate returns the closest match, or null', () => {
   assert.equal(findDuplicate('Cleopatra and the pyramids', seen), null);
   assert.equal(findDuplicate('', seen), null, 'empty text is never a duplicate');
   assert.equal(findDuplicate('anything', []), null, 'nothing to match against');
+});
+
+// --- the Submagic publisher -------------------------------------------------
+
+test('submagic declares itself batched, so the poster groups platforms', () => {
+  // One project carries every platform for a video. Three projects per video
+  // would triple the account's usage to stagger posts by a couple of hours.
+  assert.equal(batched, true);
+});
+
+test('buildPlatforms maps each platform to the shape the publish endpoint wants', () => {
+  const platforms = buildPlatforms([
+    { platform: 'youtube', caption: 'A caption', youtubeTitle: 'A title' },
+    { platform: 'instagram', caption: 'IG caption' },
+    { platform: 'tiktok', caption: 'TT caption' },
+  ]);
+
+  assert.deepEqual(Object.keys(platforms).sort(), ['instagram', 'tiktok', 'youtube']);
+  assert.equal(platforms.youtube.title, 'A title');
+  assert.equal(platforms.youtube.description, 'A caption');
+  assert.equal(platforms.instagram.format, 'reel');
+
+  // TikTok rejects the call without all of these.
+  for (const field of [
+    'content', 'privacyLevel', 'allowComment', 'allowDuet', 'allowStitch',
+    'contentPreviewConfirmed', 'expressConsentGiven',
+  ]) {
+    assert.ok(field in platforms.tiktok, `tiktok.${field} is required by the API`);
+  }
+  assert.equal(platforms.tiktok.contentPreviewConfirmed, true);
+  assert.equal(platforms.tiktok.expressConsentGiven, true);
+});
+
+test('a youtube title falls back to the caption and respects the 100 char cap', () => {
+  const long = 'x'.repeat(200);
+  const p = buildPlatforms([{ platform: 'youtube', caption: long }]);
+  assert.equal(p.youtube.title.length, 100);
+  assert.equal(p.youtube.description, long, 'the description is not capped at 100');
+});
+
+test('a tiktok caption is trimmed to the platform limit', () => {
+  const p = buildPlatforms([{ platform: 'tiktok', caption: 'y'.repeat(3000) }]);
+  assert.equal(p.tiktok.content.length, 2200);
+});
+
+test('an unmappable platform is skipped rather than sent as nonsense', () => {
+  const p = buildPlatforms([
+    { platform: 'youtube', caption: 'c', youtubeTitle: 't' },
+    { platform: 'myspace', caption: 'c' },
+  ]);
+  assert.deepEqual(Object.keys(p), ['youtube']);
+});
+
+test('buildPlatforms tolerates a missing caption', () => {
+  const p = buildPlatforms([{ platform: 'instagram' }]);
+  assert.equal(p.instagram.content, '');
+  assert.equal(p.instagram.format, 'reel');
 });
