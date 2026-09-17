@@ -3,6 +3,27 @@
 Only needed when `STORE_DRIVER=airtable`. With the default `json` driver the
 machine creates its own files and you can skip this entirely.
 
+## Build it with one command
+
+```bash
+export AIRTABLE_API_KEY=pat...        # needs schema.bases:read + schema.bases:write
+export AIRTABLE_BASE_ID=app...        # or AIRTABLE_WORKSPACE_ID + --create
+node scripts/setup-airtable.js --dry-run   # show what it would do
+node scripts/setup-airtable.js
+```
+
+`scripts/airtable-schema.js` is the source of truth; the tables below document
+what it builds. The script is idempotent — re-run it after a schema change and
+it adds what is missing. It never deletes or retypes an existing field.
+
+To create the base as well as its tables, pass `--create` with
+`AIRTABLE_WORKSPACE_ID` (the `wsp...` in your workspace URL) and give the token
+`workspace.bases:write`.
+
+---
+
+## Building it by hand
+
 Create one base with four tables. **Every table needs a single line text field
 named exactly `id`** — that is the machine's own key, and it is what makes a
 run resumable without duplicating rows. Object and array fields are stored as

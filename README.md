@@ -97,7 +97,10 @@ src/
 docs/
   SYSTEM.md             what each skill does and why
   SETUP.md              accounts, keys, running it
+  OPERATING.md          keeping it running: throughput, quiet failure, costs
   AIRTABLE_SCHEMA.md    tables and fields
+scripts/
+  setup-airtable.js     builds the Airtable base in one command
 ```
 
 ## Changing the niche
