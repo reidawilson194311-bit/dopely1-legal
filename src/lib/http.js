@@ -2,9 +2,19 @@ import { logger } from './log.js';
 
 const log = logger('http');
 
+/** Credentials ride in the query string on Google and Apify. Never log them. */
+export function redactUrl(url) {
+  return String(url).replace(/([?&](?:key|token|api_key|access_token)=)[^&]*/gi, '$1***');
+}
+
 export class HttpError extends Error {
   constructor(status, statusText, body, url) {
-    super(`${status} ${statusText} - ${url}`);
+    // The server's explanation lives in the body - Google's 404, for one, says
+    // whether it is the model, the API version or the method that is wrong.
+    // Callers only ever logged `.message`, so that answer was thrown away and
+    // every failure had to be diagnosed by guesswork.
+    const detail = String(body || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+    super(`${status} ${statusText} - ${redactUrl(url)}${detail ? ` - ${detail}` : ''}`);
     this.name = 'HttpError';
     this.status = status;
     this.body = body;
