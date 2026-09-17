@@ -121,6 +121,8 @@ export const config = {
     ttsProvider: env('TTS_PROVIDER', 'none'),
     ttsApiKey: env('TTS_API_KEY'),
     ttsVoiceId: env('TTS_VOICE_ID', ''),
+    /** Gemini's TTS model. Free tier cannot reach it; the paid tier can. */
+    ttsModel: env('TTS_MODEL', 'gemini-2.5-flash-preview-tts'),
     ttsBaseUrl: env('TTS_BASE_URL', ''),
     musicFile: env('MUSIC_FILE', ''),
     musicVolume: num('MUSIC_VOLUME', 0.12),

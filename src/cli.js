@@ -181,7 +181,18 @@ async function doctor() {
 
       if (config.copy.provider === 'gemini') await check('copy model', copyModel, 'COPY_MODEL');
       await check('image model', imageModel, 'GEMINI_IMAGE_MODEL');
+      if (config.design.ttsProvider === 'gemini') {
+        await check('voice model', config.design.ttsModel, 'TTS_MODEL');
+      }
     }
+  }
+
+  // Silent shorts are a legitimate format, but they are rarely what anyone
+  // meant to ship - so say which one is about to be produced.
+  if (config.design.ttsProvider === 'none') {
+    need('voiceover (skill 03)', false,
+      'TTS_PROVIDER=none renders SILENT video - the scripts\' voiceover lines only ' +
+        'set beat timing. Set TTS_PROVIDER=gemini to narrate with the key you already have.');
   }
 
   const ffmpeg = await hasFfmpeg();

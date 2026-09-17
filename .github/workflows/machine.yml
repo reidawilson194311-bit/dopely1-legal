@@ -190,6 +190,7 @@ jobs:
           TTS_PROVIDER: ${{ vars.TTS_PROVIDER || 'none' }}
           TTS_API_KEY: ${{ secrets.TTS_API_KEY }}
           TTS_VOICE_ID: ${{ vars.TTS_VOICE_ID }}
+          TTS_MODEL: ${{ vars.TTS_MODEL }}
           PUBLISH_PROVIDER: ${{ vars.PUBLISH_PROVIDER || 'none' }}
           METRICOOL_USER_TOKEN: ${{ secrets.METRICOOL_USER_TOKEN }}
           METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}
