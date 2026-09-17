@@ -8,7 +8,7 @@
  *   machine design              03 only
  *   machine post                04 only
  *   machine status              what is sitting in each table
- *   machine show                print the latest scripts in full, for review\n *   machine requeue             put rows back a stage so it can run again\n *   machine doctor              check credentials and tooling before a real run
+ *   machine show                print the latest scripts in full, for review\n *   machine requeue             put rows back a stage so it can run again\n *   machine patch               correct one field on one row after review\n *   machine doctor              check credentials and tooling before a real run
  *
  * Flags: --dry-run  --limit=N  --platforms=a,b  --stages=a,b  --verbose
  */
@@ -138,6 +138,49 @@ async function requeue({ table = 'scripts', from = 'designed', to = 'ready-to-de
   return rows.length;
 }
 
+/**
+ * Correct one field on one row.
+ *
+ * Review finds defects in individual scripts - a hook comparing against the
+ * wrong thing, a beat whose caption and voiceover disagree. Regenerating the
+ * batch to fix one sentence pays for four scripts nobody has read and throws
+ * away the three that were fine.
+ *
+ *   machine patch --table=scripts --id=scr_x --field=hook --value="..."
+ *   machine patch --id=scr_x --field=beats.3.onScreenText --value="..."
+ */
+async function patch({ table = 'scripts', id, field, value } = {}) {
+  if (!id || !field) throw new Error('patch needs --id and --field');
+  const store = getStore();
+  const [row] = await store.list(table, { where: (r) => r.id === id, limit: 1 });
+  if (!row) throw new Error(`no row ${id} in ${table}`);
+
+  const [head, ...rest] = field.split('.');
+  let next;
+  if (!rest.length) {
+    next = value;
+  } else {
+    // beats is stored as JSON in Airtable and as an array in the json store.
+    const parsed = typeof row[head] === 'string' ? JSON.parse(row[head]) : row[head];
+    const clone = structuredClone(parsed);
+    const leaf = rest.pop();
+    const target = rest.reduce((o, k) => {
+      if (o?.[k] === undefined) throw new Error(`${field} does not exist on ${id}`);
+      return o[k];
+    }, clone);
+    if (target[leaf] === undefined) throw new Error(`${field} does not exist on ${id}`);
+    console.log(`  was: ${target[leaf]}`);
+    target[leaf] = value;
+    next = typeof row[head] === 'string' ? JSON.stringify(clone) : clone;
+  }
+  if (!rest.length && row[head] === undefined) throw new Error(`${field} does not exist on ${id}`);
+  if (!field.includes('.')) console.log(`  was: ${row[head]}`);
+
+  await store.patch(table, id, { [head]: next });
+  console.log(`  now: ${value}\n`);
+  return true;
+}
+
 async function doctor() {
   const checks = [];
   const need = (label, ok, hint) => checks.push({ label, ok, hint });
@@ -226,6 +269,9 @@ async function doctor() {
   }
 
   const provider = config.post.provider;
+  if (provider !== 'none') {
+    need(`publishing to: ${config.post.platforms.join(', ')}`, true);
+  }
   if (provider === 'submagic') {
     need('Submagic credentials (skill 04)', Boolean(config.post.submagic.apiKey),
       'set SUBMAGIC_API_KEY');
@@ -242,7 +288,7 @@ async function doctor() {
       'set UNIPILE_API_KEY and UNIPILE_DSN');
   } else {
     need('publisher configured (skill 04)', false,
-      'set PUBLISH_PROVIDER=metricool|unipile - without it posts only queue locally');
+      'set PUBLISH_PROVIDER=submagic|metricool|unipile - without it posts only queue locally');
   }
 
   if (config.store.driver === 'json' && process.env.CI) {
@@ -281,6 +327,7 @@ dopely1-shorts-machine - scrape, reword, design, post. 0 humans.
   machine status
   machine show [--limit=N] [--table=scripts|winners|renders|posts]
   machine requeue [--table=T] [--from=STATUS] [--to=STATUS] [--limit=N]
+  machine patch --id=ID --field=PATH --value=TEXT [--table=T]
   machine doctor
 
   --dry-run          no external calls, no spend, nothing goes live
@@ -307,6 +354,15 @@ async function main() {
     return 0;
   }
   if (command === 'status') return (await status(), 0);
+  if (command === 'patch') {
+    await patch({
+      table: flags.table || 'scripts',
+      id: flags.id,
+      field: flags.field,
+      value: flags.value,
+    });
+    return 0;
+  }
   if (command === 'requeue') {
     await requeue({
       table: flags.table || 'scripts',

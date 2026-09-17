@@ -79,7 +79,8 @@ ffmpeg -filters | grep drawtext
 Captions also need a bold TTF. The machine looks for DejaVu, Liberation and
 Arial in the usual places; set `CAPTION_FONT=/path/to/Bold.ttf` otherwise.
 
-Voiceover is off by default, and off means **silent video**: the scripts still
+Voiceover is **on** by default, narrating with `GEMINI_API_KEY`. Turning it
+off (`TTS_PROVIDER=none`) means **silent video**: the scripts still
 carry a voiceover line per beat, but with no TTS it only sets how long each
 frame holds. `doctor` says so explicitly.
 

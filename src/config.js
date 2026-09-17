@@ -130,7 +130,13 @@ export const config = {
     ffmpeg: env('FFMPEG_PATH', 'ffmpeg'),
     ffprobe: env('FFPROBE_PATH', 'ffprobe'),
     /** Voiceover: 'none' | 'elevenlabs' | 'openai-compatible' */
-    ttsProvider: env('TTS_PROVIDER', 'none'),
+    /**
+     * Narration on by default. It used to be 'none', which rendered silent
+     * video and said nothing about it - and a repo variable cannot be set
+     * from outside the settings page, so the default is the only lever that
+     * reaches the scheduled runs.
+     */
+    ttsProvider: env('TTS_PROVIDER', 'gemini'),
     ttsApiKey: env('TTS_API_KEY'),
     ttsVoiceId: env('TTS_VOICE_ID', ''),
     /** Gemini's TTS model. Free tier cannot reach it; the paid tier can. */
@@ -151,7 +157,15 @@ export const config = {
   // ---- Skill 04: the poster -----------------------------------------------
   post: {
     /** 'submagic' | 'metricool' | 'unipile' | 'none' */
-    provider: env('PUBLISH_PROVIDER', 'none'),
+    provider: env('PUBLISH_PROVIDER', 'submagic'),
+    /**
+     * Where to PUBLISH, which is not the same question as where to SCRAPE.
+     * `platforms` above is the research set - all three, because all three
+     * are worth learning from. This is the set actually connected inside the
+     * publisher, and sending to an unconnected one fails the post. Widen it
+     * as connections are added.
+     */
+    platforms: list('PUBLISH_PLATFORMS', ['youtube']),
     submagic: {
       apiKey: env('SUBMAGIC_API_KEY'),
       language: env('SUBMAGIC_LANGUAGE', 'en'),

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { pickWinners, median, engagementRate } from '../src/lib/score.js';
 import { normalize, extractHook } from '../src/lib/normalize.js';
-import { overlapRatio } from '../src/skills/02-copywriter.js';
+import { overlapRatio, choosePillar } from '../src/skills/02-copywriter.js';
 import { wrapCaption, buildFilterGraph } from '../src/lib/video.js';
 import { composeCaption, drain } from '../src/skills/04-poster.js';
 import { buildPlatforms, batched } from '../src/lib/publishers/submagic.js';
@@ -782,4 +782,41 @@ test('a falsy but meaningful value is not mistaken for absent', () => {
   process.env.__MACHINE_TEST_ZERO = '0';
   assert.equal(env('__MACHINE_TEST_ZERO', 'fallback'), '0');
   delete process.env.__MACHINE_TEST_ZERO;
+});
+
+// --- pillar rotation: four scripts, one pillar, six in the brief ----------
+
+const PILLARS = [
+  { id: 'did-you-know', weight: 3 },
+  { id: 'how-things-work', weight: 2 },
+  { id: 'psychology', weight: 2 },
+  { id: 'money-life', weight: 2 },
+  { id: 'history-bite', weight: 1 },
+  { id: 'internet', weight: 1 },
+];
+
+test('a recently used pillar is not chosen again', () => {
+  const recent = ['did-you-know', 'how-things-work', 'psychology'];
+  for (let i = 0; i < 50; i++) {
+    const p = choosePillar(PILLARS, recent);
+    assert.ok(!recent.includes(p.id), `${p.id} was used recently`);
+  }
+});
+
+test('weight decides the pick among what is left', () => {
+  // pick() lands in the first slot, so the heaviest remaining pillar wins.
+  assert.equal(choosePillar(PILLARS, [], () => 0.01).id, 'did-you-know');
+  // ...and at the top of the range, the last one does.
+  assert.equal(choosePillar(PILLARS, [], () => 0.999).id, 'internet');
+});
+
+test('every pillar being recent falls back rather than returning nothing', () => {
+  // Otherwise a channel that has covered all six stops producing scripts.
+  const all = PILLARS.map((p) => p.id);
+  const p = choosePillar(PILLARS, all);
+  assert.ok(all.includes(p.id));
+});
+
+test('a single pillar is still a valid choice', () => {
+  assert.equal(choosePillar([{ id: 'only', weight: 1 }], []).id, 'only');
 });

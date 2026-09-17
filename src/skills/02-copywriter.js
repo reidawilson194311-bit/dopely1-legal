@@ -117,12 +117,51 @@ function systemPrompt() {
     'central claim you cannot source is worthless to us - say so in sourceNote',
     'rather than inventing a citation.',
     '',
+    'COMPARISONS: name the exact thing compared. "Hotter than the sun" and',
+    "\"hotter than the sun's CORE\" differ by a factor of a thousand, and the",
+    'hook is the line that carries the video - it must be the precise one, not',
+    'the roundest one. The same precision applies in sourceNote: a unit you',
+    'cannot state correctly is a claim you should not make.',
+    '',
+    'BEATS: onScreenText and voiceover are read at the same moment, so they must',
+    'make the same claim. The text is the headline for what the voice is saying.',
+    'A beat captioned with a date while the voice describes a mechanism reads as',
+    'two unrelated videos playing at once.',
+    '',
+    'CTA: write one that belongs to THIS script. A feed where every video closes',
+    'on the same sentence reads as a template, and platforms demote templates.',
+    '',
     `LENGTH: ${config.copy.beatsPerScript} beats, 30-45 seconds of voiceover total.`,
   ].join('\n');
 }
 
-function userPrompt(winner, recentTitles) {
+/**
+ * Pick the pillar this script has to serve.
+ *
+ * The schema always listed every pillar and nothing ever chose between them,
+ * so the engine picked for itself and picked the same one four times out of
+ * four - a channel of nothing but animal trivia, from a brief asking for six
+ * subjects. Weights set the long-run mix; the recent-pillar exclusion stops a
+ * single batch landing entirely on the heaviest one.
+ */
+export function choosePillar(pillars, recent = [], pick = Math.random) {
+  const fresh = pillars.filter((p) => !recent.includes(p.id));
+  const pool = fresh.length ? fresh : pillars;
+  const total = pool.reduce((sum, p) => sum + (p.weight || 1), 0);
+  let n = pick() * total;
+  for (const p of pool) {
+    n -= p.weight || 1;
+    if (n <= 0) return p;
+  }
+  return pool[pool.length - 1];
+}
+
+function userPrompt(winner, recentTitles, pillar) {
   return [
+    `PILLAR: write this one as "${pillar.id}" - ${pillar.label}.`,
+    'The reference post need not belong to that pillar; find the angle on its',
+    'idea that does.',
+    '',
     'REFERENCE POST (performed well - use the idea, not the words):',
     `  platform: ${winner.platform}`,
     `  views: ${winner.views.toLocaleString()} (${winner.viralMultiple}x this account's median)`,
@@ -243,6 +282,9 @@ export async function write({ limit = config.copy.batchSize } = {}) {
   ].filter((e) => e.tokens.size);
 
   const recentTitles = priorScripts.slice(0, 25).map((s) => s.title);
+  // Pillars already used recently, so a fresh batch does not land on one
+  // subject the way the first four scripts all landed on did-you-know.
+  const recentPillars = priorScripts.slice(0, NICHE.pillars.length - 1).map((s) => s.pillar);
   const written = [];
   const errors = [];
   let duplicates = 0;
@@ -260,11 +302,12 @@ export async function write({ limit = config.copy.batchSize } = {}) {
         continue;
       }
 
+      const pillar = choosePillar(NICHE.pillars, recentPillars);
       const script = config.dryRun
         ? dryRunScript(winner)
         : await generateJSON({
             system: systemPrompt(),
-            prompt: userPrompt(winner, recentTitles),
+            prompt: userPrompt(winner, recentTitles, pillar),
             schema: scriptSchema(config.copy.beatsPerScript),
           });
 
@@ -303,6 +346,7 @@ export async function write({ limit = config.copy.batchSize } = {}) {
       };
       written.push(row);
       recentTitles.push(script.title);
+      recentPillars.push(script.pillar);
       await store.patch(TABLES.WINNERS, winner.id, { status: 'used' });
       log.info(`  wrote "${script.title}" [${script.pillar}] ${script.beats.length} beats`);
     } catch (err) {
