@@ -16,6 +16,7 @@ import { estimateDuration } from '../src/lib/tts.js';
 import { reportBatch } from '../src/lib/batch.js';
 import { rampedRate } from '../src/lib/ramp.js';
 import { toGeminiSchema, parseJSON, describeSchema, DeclinedError } from '../src/lib/writer/schema.js';
+import { TABLES, diffTable } from '../scripts/airtable-schema.js';
 
 // --- 01 researcher ----------------------------------------------------------
 
@@ -501,4 +502,75 @@ test('a decline from any provider is one error type skill 02 can catch', () => {
   assert.equal(err.name, 'DeclinedError');
   assert.match(err.message, /Gemini declined this request \(SAFETY\)/);
   assert.match(new DeclinedError('The model').message, /The model declined this request$/);
+});
+
+// --- the Airtable base schema ----------------------------------------------
+
+test('every table leads with id, because that is what stops rows duplicating', () => {
+  // Airtable makes the first field primary and will not change it via the API.
+  for (const t of TABLES) {
+    assert.equal(t.fields[0].name, 'id', `${t.name} must lead with id`);
+    assert.equal(t.fields[0].type, 'singleLineText');
+  }
+});
+
+test('no table declares the same field twice', () => {
+  for (const t of TABLES) {
+    const names = t.fields.map((f) => f.name);
+    assert.deepEqual([...new Set(names)], names, `${t.name} has duplicate fields`);
+  }
+});
+
+test('every select field ships its choices', () => {
+  // Without choices Airtable rejects the field; with them the base is usable
+  // for filtering on day one rather than after the first write.
+  for (const t of TABLES) {
+    for (const f of t.fields.filter((x) => x.type === 'singleSelect')) {
+      assert.ok(f.options?.choices?.length, `${t.name}.${f.name} has no choices`);
+      for (const choice of f.options.choices) assert.ok(choice.name, 'choice needs a name');
+    }
+  }
+});
+
+test('the four tables the skills write to are all present', () => {
+  assert.deepEqual(TABLES.map((t) => t.name), ['Winners', 'Scripts', 'Renders', 'Posts']);
+});
+
+test('diffTable reports a table that does not exist as entirely missing', () => {
+  const spec = TABLES[0];
+  const d = diffTable(spec, null);
+  assert.equal(d.missing.length, spec.fields.length);
+  assert.equal(d.wrongType.length, 0);
+});
+
+test('diffTable is a no-op against a base that already matches', () => {
+  const spec = TABLES[1];
+  const d = diffTable(spec, { fields: spec.fields.map((f) => ({ name: f.name, type: f.type })) });
+  assert.equal(d.missing.length, 0);
+  assert.equal(d.wrongType.length, 0);
+  assert.equal(d.primaryOk, true);
+});
+
+test('diffTable finds only what is actually missing', () => {
+  const spec = TABLES[2];
+  const partial = spec.fields.slice(0, 5).map((f) => ({ name: f.name, type: f.type }));
+  const d = diffTable(spec, { fields: partial });
+  assert.equal(d.missing.length, spec.fields.length - 5);
+  assert.ok(!d.missing.some((f) => f.name === 'id'));
+});
+
+test('diffTable flags a wrong type rather than silently adding a duplicate', () => {
+  const spec = TABLES[0];
+  const table = {
+    fields: spec.fields.map((f) => (f.name === 'views' ? { name: 'views', type: 'singleLineText' } : { name: f.name, type: f.type })),
+  };
+  const d = diffTable(spec, table);
+  assert.equal(d.missing.length, 0, 'the field exists, so it is not missing');
+  assert.deepEqual(d.wrongType, [{ name: 'views', want: 'number', have: 'singleLineText' }]);
+});
+
+test('diffTable catches a base whose primary field is not id', () => {
+  const spec = TABLES[3];
+  const table = { fields: [{ name: 'Name', type: 'singleLineText' }, ...spec.fields.map((f) => ({ name: f.name, type: f.type }))] };
+  assert.equal(diffTable(spec, table).primaryOk, false);
 });

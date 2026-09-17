@@ -89,8 +89,13 @@ export const config = {
     },
     /** Anthropic only. */
     effort: env('ANTHROPIC_EFFORT', 'medium'),
-    /** Scripts to write per run. */
-    batchSize: num('COPY_BATCH_SIZE', 6),
+    /**
+     * Scripts to write per run. Matched to DESIGN_BATCH_SIZE on purpose: the
+     * designer is the narrower stage, so writing more than it can render just
+     * spends tokens on scripts that queue up forever. At 6/day the winners
+     * table also drained faster than the weekly researcher refilled it.
+     */
+    batchSize: num('COPY_BATCH_SIZE', 4),
     /** Beats (= generated images) per short. 5-7 reads well at 30-45s. */
     beatsPerScript: num('COPY_BEATS', 6),
   },
