@@ -123,10 +123,24 @@ export const config = {
     batchSize: num('DESIGN_BATCH_SIZE', 4),
   },
 
+  /** Somewhere public to put a rendered video, for publishers that need a URL. */
+  host: {
+    githubToken: env('GITHUB_TOKEN'),
+    repo: env('GITHUB_REPOSITORY'),
+    releaseTag: env('HOST_RELEASE_TAG', 'rendered-shorts'),
+  },
+
   // ---- Skill 04: the poster -----------------------------------------------
   post: {
-    /** 'metricool' | 'unipile' | 'none' */
+    /** 'submagic' | 'metricool' | 'unipile' | 'none' */
     provider: env('PUBLISH_PROVIDER', 'none'),
+    submagic: {
+      apiKey: env('SUBMAGIC_API_KEY'),
+      language: env('SUBMAGIC_LANGUAGE', 'en'),
+      tiktokPrivacy: env('SUBMAGIC_TIKTOK_PRIVACY', 'public'),
+      pollMs: num('SUBMAGIC_POLL_MS', 5000),
+      readyTimeoutMs: num('SUBMAGIC_READY_TIMEOUT_MS', 900000),
+    },
     metricool: {
       token: env('METRICOOL_USER_TOKEN'),
       userId: env('METRICOOL_USER_ID'),

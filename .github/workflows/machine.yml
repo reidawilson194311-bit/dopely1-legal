@@ -50,6 +50,11 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      # Rendered videos are uploaded as release assets so publishers that
+      # fetch by URL can reach them. Without this the upload 403s whenever the
+      # repository's default token permission is read-only.
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -160,6 +165,11 @@ jobs:
           AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
           AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
           SUBMAGIC_API_KEY: ${{ secrets.SUBMAGIC_API_KEY }}
+          SUBMAGIC_LANGUAGE: ${{ vars.SUBMAGIC_LANGUAGE }}
+          SUBMAGIC_TIKTOK_PRIVACY: ${{ vars.SUBMAGIC_TIKTOK_PRIVACY }}
+          # Hosting the rendered video so Submagic can fetch it by URL.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           SUBMAGIC_PROBE_PROJECT_ID: ${{ inputs.probe_project_id }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           COPY_PROVIDER: ${{ vars.COPY_PROVIDER || 'gemini' }}
