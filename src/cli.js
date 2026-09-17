@@ -78,7 +78,16 @@ async function show({ limit = 10, table = 'scripts' } = {}) {
     line('status', r.status);
     line('youtube', r.youtubeTitle);
     line('source', r.sourceNote);
-    line('hashtags', Array.isArray(r.hashtags) ? r.hashtags.join(' ') : r.hashtags);
+    const tags = typeof r.hashtags === 'string' ? safeParse(r.hashtags) : r.hashtags;
+    if (Array.isArray(tags)) line('hashtags', tags.join(' '));
+    else if (tags && typeof tags === 'object') {
+      // Hashtags are per-platform, so the object IS the answer - printing it
+      // through String() just gives [object Object].
+      console.log('hashtags');
+      for (const [k, v] of Object.entries(tags)) {
+        console.log(`  ${k.padEnd(10)} ${Array.isArray(v) ? v.join(' ') : v}`);
+      }
+    } else line('hashtags', tags);
     if (r.hook) console.log(`\nHOOK\n  ${r.hook}`);
     const beats = typeof r.beats === 'string' ? safeParse(r.beats) : r.beats;
     if (Array.isArray(beats)) {
