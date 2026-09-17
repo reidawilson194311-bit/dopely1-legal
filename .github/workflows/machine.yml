@@ -29,6 +29,10 @@ on:
         description: 'Build the Airtable base (safe to re-run; never deletes or retypes a field)'
         type: boolean
         default: false
+      probe_submagic:
+        description: 'Ask the Submagic API which endpoints exist (read-only; publishes nothing)'
+        type: boolean
+        default: false
 
 concurrency:
   group: machine
@@ -57,6 +61,8 @@ jobs:
               '30 * * * *') echo "stages=drain" >> "$GITHUB_OUTPUT" ;;
               *)            echo "stages=write,design,post" >> "$GITHUB_OUTPUT" ;;
             esac
+          elif [ "${{ inputs.probe_submagic }}" = "true" ]; then
+            echo "stages=probe-submagic" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.setup_airtable }}" = "true" ]; then
             echo "stages=setup-airtable" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.doctor }}" = "true" ]; then
@@ -69,13 +75,15 @@ jobs:
         if: >-
           steps.plan.outputs.stages != 'drain' &&
           steps.plan.outputs.stages != 'doctor' &&
-          steps.plan.outputs.stages != 'setup-airtable'
+          steps.plan.outputs.stages != 'setup-airtable' &&
+          steps.plan.outputs.stages != 'probe-submagic'
         run: npm test
 
       - name: Install ffmpeg
         if: >-
           steps.plan.outputs.stages != 'drain' &&
-          steps.plan.outputs.stages != 'setup-airtable'
+          steps.plan.outputs.stages != 'setup-airtable' &&
+          steps.plan.outputs.stages != 'probe-submagic'
         # Kept for `doctor` too: it reports on ffmpeg and the caption filter,
         # and that answer is only useful if it describes the environment a real run would get.
         # The apt build includes libfreetype, so drawtext is available and
@@ -99,7 +107,8 @@ jobs:
           DRY_RUN_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
           STAGES: ${{ steps.plan.outputs.stages }}
         run: |
-          if [ "$DRY_RUN_INPUT" = "true" ] || [ "$STAGES" = "doctor" ] || [ "$STAGES" = "setup-airtable" ]; then
+          if [ "$DRY_RUN_INPUT" = "true" ] || [ "$STAGES" = "doctor" ] || \
+             [ "$STAGES" = "setup-airtable" ] || [ "$STAGES" = "probe-submagic" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           missing=""
@@ -142,6 +151,7 @@ jobs:
           STORE_DRIVER: ${{ vars.STORE_DRIVER || 'json' }}
           AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
           AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
+          SUBMAGIC_API_KEY: ${{ secrets.SUBMAGIC_API_KEY }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           COPY_PROVIDER: ${{ vars.COPY_PROVIDER || 'gemini' }}
           COPY_MODEL: ${{ vars.COPY_MODEL }}
@@ -163,7 +173,17 @@ jobs:
           UNIPILE_ACCOUNT_YOUTUBE: ${{ secrets.UNIPILE_ACCOUNT_YOUTUBE }}
           PUBLISH_TIMEZONE: ${{ vars.PUBLISH_TIMEZONE || 'America/New_York' }}
         run: |
-          if [ "${{ steps.plan.outputs.stages }}" = "setup-airtable" ]; then
+          if [ "${{ steps.plan.outputs.stages }}" = "probe-submagic" ]; then
+            # Read-only: GETs only, so nothing can be published by accident.
+            node scripts/probe-submagic.js | tee /tmp/probe.txt || true
+            {
+              echo '## Submagic API probe'
+              echo
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' /tmp/probe.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.plan.outputs.stages }}" = "setup-airtable" ]; then
             # Builds the base's tables and fields. Idempotent, and it never
             # deletes or retypes an existing field, so re-running is safe.
             node scripts/setup-airtable.js | tee /tmp/airtable.txt
@@ -199,7 +219,8 @@ jobs:
         if: >-
           always() && steps.preflight.outputs.configured == 'true' &&
           steps.plan.outputs.stages != 'doctor' &&
-          steps.plan.outputs.stages != 'setup-airtable'
+          steps.plan.outputs.stages != 'setup-airtable' &&
+          steps.plan.outputs.stages != 'probe-submagic'
         uses: actions/upload-artifact@v4
         with:
           name: shorts-${{ github.run_id }}
