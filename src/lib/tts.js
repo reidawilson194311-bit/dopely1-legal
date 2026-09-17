@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { request } from './http.js';
 import { config } from '../config.js';
@@ -153,3 +154,32 @@ export async function speak(text, outPath) {
 }
 
 export default speak;
+
+/**
+ * Prove the voice actually speaks, using the real request shape.
+ *
+ * A TTS model rejects a plain text-generation call - it needs
+ * responseModalities AUDIO - so checking it with the same ping used for the
+ * copy and image models reports a failure that is not there. This runs the
+ * provider itself and throws rather than falling back, which is the opposite
+ * of what speak() wants at render time.
+ */
+export async function ping() {
+  const provider = config.design.ttsProvider;
+  if (provider === 'none') throw new Error('TTS_PROVIDER is none');
+  const outPath = path.join(os.tmpdir(), `machine-tts-ping-${Date.now()}.mp3`);
+  try {
+    const written =
+      provider === 'gemini' ? await gemini('ok', outPath)
+      : provider === 'elevenlabs' ? await elevenlabs('ok', outPath)
+      : provider === 'openai-compatible' ? await openaiCompatible('ok', outPath)
+      : (() => { throw new Error(`unknown TTS_PROVIDER: ${provider}`); })();
+    const { size } = fs.statSync(written);
+    if (!size) throw new Error('the provider returned an empty file');
+    return { path: written, bytes: size };
+  } finally {
+    for (const f of [outPath, outPath.replace(/\.[^.]+$/, '') + '.wav']) {
+      try { fs.unlinkSync(f); } catch { /* never written */ }
+    }
+  }
+}
