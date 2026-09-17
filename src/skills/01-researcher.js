@@ -35,21 +35,37 @@ export async function research({ platforms = config.platforms } = {}) {
   const errors = [];
   let attempted = 0;
 
-  for (const platform of platforms) {
-    const handles = NICHE.seedAccounts[platform] || [];
-    if (!handles.length) {
+  // The three scrapes share nothing, so running them one after another just
+  // adds their slowest cases together. Concurrently, the stage costs whichever
+  // platform is slowest instead of all three.
+  const jobs = platforms
+    .map((platform) => ({ platform, handles: NICHE.seedAccounts[platform] || [] }))
+    .filter(({ platform, handles }) => {
+      if (handles.length) return true;
       log.warn(`no seed accounts for ${platform}, skipping`);
-      continue;
-    }
-    attempted++;
+      return false;
+    });
+
+  attempted = jobs.length;
+  for (const { platform, handles } of jobs) {
     log.info(`scraping ${handles.length} ${platform} accounts`);
-    let items = [];
-    try {
-      items = await scrape(platform, handles);
-    } catch (err) {
-      // One platform failing must not cost us the other two.
-      log.error(`${platform} scrape failed, continuing`, err.message);
-      errors.push(`${platform}: ${err.message}`);
+  }
+
+  const results = await Promise.all(
+    jobs.map(async ({ platform, handles }) => {
+      try {
+        return { platform, items: await scrape(platform, handles) };
+      } catch (err) {
+        // One platform failing must not cost us the other two.
+        return { platform, error: err };
+      }
+    }),
+  );
+
+  for (const { platform, items, error } of results) {
+    if (error) {
+      log.error(`${platform} scrape failed, continuing`, error.message);
+      errors.push(`${platform}: ${error.message}`);
       continue;
     }
     const posts = items

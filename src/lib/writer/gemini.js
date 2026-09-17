@@ -54,3 +54,30 @@ export async function generateJSON({ system, prompt, schema, model, maxTokens })
   });
   return parseJSON(text, 'Gemini');
 }
+
+/**
+ * Which models this key can actually reach.
+ *
+ * A model name the key cannot see comes back as a flat 404 from
+ * :generateContent, indistinguishable from a dead endpoint until you look at
+ * the catalogue. The doctor calls this so a bad model name is caught in
+ * seconds, rather than after a twenty-minute scrape has already run.
+ */
+export async function listModels() {
+  const apiKey = config.design.geminiApiKey;
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
+  // The doctor prints failures straight into a public job summary, and an
+  // HttpError carries the URL - key and all - in its message.
+  let res;
+  try {
+    res = await request(`${ENDPOINT}?key=${encodeURIComponent(apiKey)}&pageSize=200`, {
+      timeoutMs: 30000,
+    });
+  } catch (err) {
+    throw new Error(err.message.split(' - https://')[0]);
+  }
+  return (res?.models || []).map((m) => ({
+    name: String(m.name || '').replace(/^models\//, ''),
+    methods: m.supportedGenerationMethods || [],
+  }));
+}
