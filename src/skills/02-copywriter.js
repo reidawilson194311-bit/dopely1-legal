@@ -17,6 +17,7 @@ import { logger } from '../lib/log.js';
 import { getStore, TABLES } from '../lib/store/index.js';
 import { generateJSON, DeclinedError, describeWriter } from '../lib/writer/index.js';
 import { newId, slug } from '../lib/id.js';
+import { findDuplicate, contentTokens } from '../lib/similarity.js';
 import { reportBatch } from '../lib/batch.js';
 
 const log = logger('02-copy');
@@ -180,10 +181,13 @@ function topicOf(text) {
 function dryRunScript(winner) {
   const pillar = NICHE.pillars[winner.views % NICHE.pillars.length];
   const topic = topicOf(winner.hook || winner.caption);
+  // Vary the title and hook by topic. A fixture where every script shares a
+  // hook verbatim makes unrelated topics look like duplicates to the guard -
+  // which is correct behaviour on a real shared hook, and pure noise here.
   return {
-    title: `Placeholder about ${topic}`.slice(0, 60),
+    title: topic.replace(/\b\w/g, (ch) => ch.toUpperCase()).slice(0, 60),
     pillar: pillar.id,
-    hook: 'Nobody mentions the part that matters.',
+    hook: `Nobody mentions what ${topic} actually means.`,
     beats: Array.from({ length: config.copy.beatsPerScript }, (_, i) => ({
       onScreenText: `Point ${i + 1}`,
       voiceover: `Dry-run narration, line ${i + 1}. Nothing here is a real claim.`,
@@ -223,13 +227,39 @@ export async function write({ limit = config.copy.batchSize } = {}) {
   log.info(`NODE 1 / INPUT: ${winners.length} winners`);
   if (!config.dryRun) log.info(`NODE 2 / ENGINE: ${await describeWriter()}`);
 
-  const recentTitles = (await store.list(TABLES.SCRIPTS, { limit: 25 })).map((s) => s.title);
+  // Everything we have already covered, as topic signatures. Two sources:
+  // the scripts themselves, and the hooks of winners we already wrote from -
+  // a winner whose idea we used is still the idea we used, even if the script
+  // that came out of it reads nothing like it.
+  const priorScripts = await store.list(TABLES.SCRIPTS, { limit: 200 });
+  const usedWinners = await store.list(TABLES.WINNERS, { where: (r) => r.status === 'used' });
+  // Signature is the TITLE, not the title plus hook. The title is the claim;
+  // the hook is framing, and framing is shared house style - on a fresh base
+  // there is no corpus yet to recognise that boilerplate, so including it made
+  // four unrelated topics score 0.8 against each other on day one.
+  const seen = [
+    ...priorScripts.map((s) => ({ text: s.title, tokens: contentTokens(s.title) })),
+    ...usedWinners.map((w) => ({ text: w.hook || '', tokens: contentTokens(w.hook || '') })),
+  ].filter((e) => e.tokens.size);
+
+  const recentTitles = priorScripts.slice(0, 25).map((s) => s.title);
   const written = [];
   const errors = [];
+  let duplicates = 0;
 
   // NODE 2, ENGINE: rewrite + voice-match.
   for (const winner of winners) {
     try {
+      // Cheapest rejection first: if the source idea is one we have covered,
+      // skip before spending a generation call on it.
+      const sourceDupe = findDuplicate(winner.hook || winner.caption || '', seen);
+      if (sourceDupe) {
+        log.warn(`source idea already covered (${sourceDupe.score}), skipping`, winner.id);
+        await store.patch(TABLES.WINNERS, winner.id, { status: 'rejected-duplicate' });
+        duplicates++;
+        continue;
+      }
+
       const script = config.dryRun
         ? dryRunScript(winner)
         : await generateJSON({
@@ -245,6 +275,19 @@ export async function write({ limit = config.copy.batchSize } = {}) {
         await store.patch(TABLES.WINNERS, winner.id, { status: 'rejected-overlap' });
         continue;
       }
+
+      // And again on the output: different winners can converge on one idea,
+      // and `seen` grows as this batch runs, so two scripts written minutes
+      // apart cannot both go out about the same thing.
+      const signature = script.title;
+      const outputDupe = findDuplicate(signature, seen);
+      if (outputDupe) {
+        log.warn(`writes the same idea as "${outputDupe.text.slice(0, 60)}" (${outputDupe.score}), skipping`, winner.id);
+        await store.patch(TABLES.WINNERS, winner.id, { status: 'rejected-duplicate' });
+        duplicates++;
+        continue;
+      }
+      seen.push({ text: signature, tokens: contentTokens(signature) });
 
       const row = {
         id: newId('scr'),
@@ -275,7 +318,10 @@ export async function write({ limit = config.copy.batchSize } = {}) {
 
   // NODE 3, OUTPUT: the new copy table.
   if (written.length) await store.upsert(TABLES.SCRIPTS, written);
-  log.info(`NODE 3 / OUTPUT: ${written.length} scripts written to ${store.driver}`);
+  log.info(
+    `NODE 3 / OUTPUT: ${written.length} scripts written to ${store.driver}` +
+      (duplicates ? ` (${duplicates} skipped as already-covered ideas)` : ''),
+  );
   reportBatch(log, { attempted: winners.length, succeeded: written.length, errors });
   return written;
 }

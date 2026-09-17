@@ -25,6 +25,10 @@ on:
         description: 'Only check credentials and tooling - no scraping, no generation, no spend'
         type: boolean
         default: false
+      setup_airtable:
+        description: 'Build the Airtable base (safe to re-run; never deletes or retypes a field)'
+        type: boolean
+        default: false
 
 concurrency:
   group: machine
@@ -53,6 +57,8 @@ jobs:
               '30 * * * *') echo "stages=drain" >> "$GITHUB_OUTPUT" ;;
               *)            echo "stages=write,design,post" >> "$GITHUB_OUTPUT" ;;
             esac
+          elif [ "${{ inputs.setup_airtable }}" = "true" ]; then
+            echo "stages=setup-airtable" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.doctor }}" = "true" ]; then
             echo "stages=doctor" >> "$GITHUB_OUTPUT"
           else
@@ -60,11 +66,16 @@ jobs:
           fi
 
       - name: Verify the code before running it for real
-        if: steps.plan.outputs.stages != 'drain' && steps.plan.outputs.stages != 'doctor'
+        if: >-
+          steps.plan.outputs.stages != 'drain' &&
+          steps.plan.outputs.stages != 'doctor' &&
+          steps.plan.outputs.stages != 'setup-airtable'
         run: npm test
 
       - name: Install ffmpeg
-        if: steps.plan.outputs.stages != 'drain'
+        if: >-
+          steps.plan.outputs.stages != 'drain' &&
+          steps.plan.outputs.stages != 'setup-airtable'
         # Kept for `doctor` too: it reports on ffmpeg and the caption filter,
         # and that answer is only useful if it describes the environment a real run would get.
         # The apt build includes libfreetype, so drawtext is available and
@@ -88,7 +99,7 @@ jobs:
           DRY_RUN_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
           STAGES: ${{ steps.plan.outputs.stages }}
         run: |
-          if [ "$DRY_RUN_INPUT" = "true" ] || [ "$STAGES" = "doctor" ]; then
+          if [ "$DRY_RUN_INPUT" = "true" ] || [ "$STAGES" = "doctor" ] || [ "$STAGES" = "setup-airtable" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           missing=""
@@ -152,7 +163,18 @@ jobs:
           UNIPILE_ACCOUNT_YOUTUBE: ${{ secrets.UNIPILE_ACCOUNT_YOUTUBE }}
           PUBLISH_TIMEZONE: ${{ vars.PUBLISH_TIMEZONE || 'America/New_York' }}
         run: |
-          if [ "${{ steps.plan.outputs.stages }}" = "doctor" ]; then
+          if [ "${{ steps.plan.outputs.stages }}" = "setup-airtable" ]; then
+            # Builds the base's tables and fields. Idempotent, and it never
+            # deletes or retypes an existing field, so re-running is safe.
+            node scripts/setup-airtable.js | tee /tmp/airtable.txt
+            {
+              echo '## Airtable base setup'
+              echo
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' /tmp/airtable.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.plan.outputs.stages }}" = "doctor" ]; then
             # Read-only: reports which credentials this runner can actually see.
             # Its non-zero exit means "something is missing", which is the
             # answer being asked for, not a broken run - so the job stays green
@@ -174,7 +196,10 @@ jobs:
           fi
 
       - name: Upload rendered shorts
-        if: always() && steps.preflight.outputs.configured == 'true' && steps.plan.outputs.stages != 'doctor'
+        if: >-
+          always() && steps.preflight.outputs.configured == 'true' &&
+          steps.plan.outputs.stages != 'doctor' &&
+          steps.plan.outputs.stages != 'setup-airtable'
         uses: actions/upload-artifact@v4
         with:
           name: shorts-${{ github.run_id }}

@@ -63,7 +63,9 @@ export const TABLES = [
       dec('engagementRate', 4),
       dec('viralScore', 3),
       text('niche'),
-      select('status', ['winner', 'used', 'rejected-overlap', 'rejected-declined']),
+      select('status', [
+        'winner', 'used', 'rejected-overlap', 'rejected-duplicate', 'rejected-declined',
+      ]),
       when('scrapedAt'),
     ],
   },

@@ -78,6 +78,18 @@ skill 03 already needs that key; any OpenAI-compatible endpoint; or Anthropic.
 One strict JSON Schema is kept and translated per provider, rather than three
 schemas that can drift apart.
 
+**Two guards, asking different questions.** The trigram check above asks *did
+we copy the source's wording*. A second check asks *is this the same idea we
+already covered* — which survives a complete rewrite, since two scripts can
+share no phrasing at all and both still be about house dust being dead skin.
+That one compares the **title**, the claim itself, as an order-blind overlap of
+content words, and it runs twice: once on the source winner before a generation
+call is spent, and once on the finished script, against a set that grows during
+the batch so two scripts written minutes apart cannot both go out.
+
+Rejected sources are marked `rejected-duplicate` and the run continues. If every
+item in a batch is rejected, the stage fails rather than reporting a clean run.
+
 Writes: **scripts**. Marks each source winner `used`.
 
 ## Skill 03 / The designer — "It makes the visuals."
