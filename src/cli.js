@@ -18,6 +18,7 @@ import { drain } from './skills/04-poster.js';
 import { getStore, TABLES } from './lib/store/index.js';
 import { hasFfmpeg, hasDrawtext, findFont } from './lib/video.js';
 import { describeWriter } from './lib/writer/index.js';
+import { listModels, DEFAULT_MODEL as GEMINI_DEFAULT_MODEL } from './lib/writer/gemini.js';
 
 function parseArgs(argv) {
   const flags = {};
@@ -83,6 +84,35 @@ async function doctor() {
   }
 
   need('GEMINI_API_KEY (skill 03)', Boolean(config.design.geminiApiKey), 'aistudio.google.com -> Get API key');
+
+  // Presence of a key says nothing about which models it can reach, and a name
+  // the key cannot see fails as a bare 404 at generate time. Ask the catalogue.
+  if (config.design.geminiApiKey) {
+    let models = null;
+    try {
+      models = await listModels();
+    } catch (err) {
+      need('Gemini key works', false, `listing models failed: ${err.message}`);
+    }
+    if (models) {
+      const named = new Set(models.map((m) => m.name));
+      const supports = (method) =>
+        models.filter((m) => m.methods.includes(method)).map((m) => m.name);
+      const copyModel = config.copy.model || GEMINI_DEFAULT_MODEL;
+      const imageModel = config.design.imageModel;
+
+      need(`Gemini key works (${models.length} models visible)`, true);
+
+      if (config.copy.provider === 'gemini') {
+        need(`copy model "${copyModel}" exists`, named.has(copyModel),
+          `this key sees: ${supports('generateContent').slice(0, 12).join(', ') || 'nothing that generates'} ` +
+            '- set COPY_MODEL to one of these');
+      }
+      need(`image model "${imageModel}" exists`, named.has(imageModel),
+        `this key sees: ${supports('predict').concat(supports('generateContent').filter((n) => /image/.test(n))).slice(0, 12).join(', ') || 'no image model'} ` +
+          '- set GEMINI_IMAGE_MODEL to one of these');
+    }
+  }
 
   const ffmpeg = await hasFfmpeg();
   need('ffmpeg (skill 03)', ffmpeg, 'apt install ffmpeg, or set FFMPEG_PATH');
