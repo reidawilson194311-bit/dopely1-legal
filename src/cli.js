@@ -8,7 +8,7 @@
  *   machine design              03 only
  *   machine post                04 only
  *   machine status              what is sitting in each table
- *   machine doctor              check credentials and tooling before a real run
+ *   machine show                print the latest scripts in full, for review\n *   machine doctor              check credentials and tooling before a real run
  *
  * Flags: --dry-run  --limit=N  --platforms=a,b  --stages=a,b  --verbose
  */
@@ -56,6 +56,54 @@ async function status() {
     console.log(`  ${name.padEnd(9)} ${String(total).padStart(4)}   ${detail}`);
   }
   console.log('');
+}
+
+/**
+ * Print the scripts in full, so a batch can be read before it is published.
+ * `status` counts rows; reviewing the writing needs the writing.
+ */
+async function show({ limit = 10, table = 'scripts' } = {}) {
+  const store = getStore();
+  const rows = (await store.list(table)).slice(-limit);
+  if (!rows.length) {
+    console.log(`\n  nothing in ${table}\n`);
+    return;
+  }
+  for (const r of rows) {
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`${r.title || r.id}`);
+    console.log(`${'='.repeat(70)}`);
+    const line = (k, v) => v && console.log(`${k.padEnd(10)} ${v}`);
+    line('pillar', r.pillar);
+    line('status', r.status);
+    line('youtube', r.youtubeTitle);
+    line('source', r.sourceNote);
+    line('hashtags', Array.isArray(r.hashtags) ? r.hashtags.join(' ') : r.hashtags);
+    if (r.hook) console.log(`\nHOOK\n  ${r.hook}`);
+    const beats = typeof r.beats === 'string' ? safeParse(r.beats) : r.beats;
+    if (Array.isArray(beats)) {
+      console.log('\nBEATS');
+      beats.forEach((b, i) => {
+        console.log(`  ${i + 1}. ${b.onScreenText || ''}`);
+        if (b.voiceover && b.voiceover !== b.onScreenText) console.log(`     vo: ${b.voiceover}`);
+      });
+    }
+    if (r.cta) console.log(`\nCTA\n  ${r.cta}`);
+    const caps = typeof r.captions === 'string' ? safeParse(r.captions) : r.captions;
+    if (caps && typeof caps === 'object') {
+      console.log('\nCAPTIONS');
+      for (const [k, v] of Object.entries(caps)) console.log(`  ${k.padEnd(10)} ${v}`);
+    }
+  }
+  console.log('');
+}
+
+function safeParse(v) {
+  try {
+    return JSON.parse(v);
+  } catch {
+    return v;
+  }
 }
 
 async function doctor() {
@@ -188,6 +236,7 @@ dopely1-shorts-machine - scrape, reword, design, post. 0 humans.
   machine research | write | design | post
   machine drain     publish held posts whose slot is due (Unipile only)
   machine status
+  machine show [--limit=N] [--table=scripts|winners|renders|posts]
   machine doctor
 
   --dry-run          no external calls, no spend, nothing goes live
@@ -214,6 +263,10 @@ async function main() {
     return 0;
   }
   if (command === 'status') return (await status(), 0);
+  if (command === 'show') {
+    await show({ limit: Number(flags.limit) || 10, table: flags.table || 'scripts' });
+    return 0;
+  }
   if (command === 'doctor') return (await doctor()) ? 0 : 1;
 
   if (command === 'run') {
