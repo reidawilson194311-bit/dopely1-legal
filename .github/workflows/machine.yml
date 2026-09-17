@@ -37,6 +37,10 @@ on:
         description: 'A Submagic project id, so the probe can check per-project paths'
         type: string
         required: false
+      probe_publish_post:
+        description: 'Also POST an empty body to /publish - cannot publish, only asks if the route exists'
+        type: boolean
+        default: false
 
 concurrency:
   group: machine
@@ -180,7 +184,9 @@ jobs:
         run: |
           if [ "${{ steps.plan.outputs.stages }}" = "probe-submagic" ]; then
             # Read-only: GETs only, so nothing can be published by accident.
-            node scripts/probe-submagic.js | tee /tmp/probe.txt || true
+            node scripts/probe-submagic.js \
+              ${{ inputs.probe_publish_post && '--post-publish' || '' }} \
+              | tee /tmp/probe.txt || true
             {
               echo '## Submagic API probe'
               echo
