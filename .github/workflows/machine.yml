@@ -33,6 +33,10 @@ on:
         description: 'Ask the Submagic API which endpoints exist (read-only; publishes nothing)'
         type: boolean
         default: false
+      probe_project_id:
+        description: 'A Submagic project id, so the probe can check per-project paths'
+        type: string
+        required: false
 
 concurrency:
   group: machine
@@ -152,6 +156,7 @@ jobs:
           AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
           AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
           SUBMAGIC_API_KEY: ${{ secrets.SUBMAGIC_API_KEY }}
+          SUBMAGIC_PROBE_PROJECT_ID: ${{ inputs.probe_project_id }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
           COPY_PROVIDER: ${{ vars.COPY_PROVIDER || 'gemini' }}
           COPY_MODEL: ${{ vars.COPY_MODEL }}
