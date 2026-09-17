@@ -256,6 +256,9 @@ async function doctor() {
 
   // Silent shorts are a legitimate format, but they are rarely what anyone
   // meant to ship - so say which one is about to be produced.
+  if (config.design.ttsProvider !== 'none') {
+    need(`voiceover: ${config.design.ttsProvider}/${config.design.ttsModel}`, true);
+  }
   if (config.design.ttsProvider === 'none') {
     need('voiceover (skill 03)', false,
       'TTS_PROVIDER=none renders SILENT video - the scripts\' voiceover lines only ' +

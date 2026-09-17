@@ -148,6 +148,10 @@ jobs:
           HAS_APIFY: ${{ secrets.APIFY_TOKEN != '' }}
           HAS_GEMINI: ${{ secrets.GEMINI_API_KEY != '' }}
           HAS_OPENAI: ${{ secrets.OPENAI_API_KEY != '' }}
+          # This one keeps a fallback: the step below branches on the value in
+          # shell, so it needs a literal. It must stay equal to config.js's
+          # default for COPY_PROVIDER, or preflight checks a different provider
+          # than the run uses.
           COPY_PROVIDER: ${{ vars.COPY_PROVIDER || 'gemini' }}
           DRY_RUN_INPUT: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
           STAGES: ${{ steps.plan.outputs.stages }}
@@ -205,17 +209,23 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           SUBMAGIC_PROBE_PROJECT_ID: ${{ inputs.probe_project_id }}
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
-          COPY_PROVIDER: ${{ vars.COPY_PROVIDER || 'gemini' }}
+          COPY_PROVIDER: ${{ vars.COPY_PROVIDER }}
           COPY_MODEL: ${{ vars.COPY_MODEL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          TTS_PROVIDER: ${{ inputs.voiceover && 'gemini' || vars.TTS_PROVIDER || 'none' }}
+          # No `|| 'none'` here. A fallback in this file is a SECOND default that
+          # silently beats the one in config.js: the variable is always set, so
+          # config's own default never applies. That is how a render that was
+          # meant to narrate came out silent after the default was changed.
+          # Pass the variable through and let config.js decide - it reads an
+          # empty value as absent.
+          TTS_PROVIDER: ${{ inputs.voiceover && 'gemini' || vars.TTS_PROVIDER }}
           TTS_API_KEY: ${{ secrets.TTS_API_KEY }}
           TTS_VOICE_ID: ${{ vars.TTS_VOICE_ID }}
           TTS_MODEL: ${{ vars.TTS_MODEL }}
-          PUBLISH_PROVIDER: ${{ vars.PUBLISH_PROVIDER || 'none' }}
+          PUBLISH_PROVIDER: ${{ vars.PUBLISH_PROVIDER }}
           METRICOOL_USER_TOKEN: ${{ secrets.METRICOOL_USER_TOKEN }}
           METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}
           METRICOOL_BLOG_ID: ${{ secrets.METRICOOL_BLOG_ID }}
