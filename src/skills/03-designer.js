@@ -122,7 +122,23 @@ export async function design({ limit = config.design.batchSize } = {}) {
 
   if (rendered.length) await store.upsert(TABLES.RENDERS, rendered);
   log.info(`OUTPUT: ${rendered.length} shorts in ${config.outDir}`);
+
+  // speak() swallows a failed beat on purpose - losing one voiceover is better
+  // than losing the batch. But every beat failing is a broken provider, not a
+  // run of bad luck, and it produced four silent shorts and a green tick.
   reportBatch(log, { attempted: scripts.length, succeeded: rendered.length, errors });
+
+  // Thrown after the upsert so the renders are kept: they cost real money and
+  // are still useful, they are just not what was asked for. reportBatch only
+  // fails a stage where nothing succeeded, and here four shorts rendered
+  // perfectly well - silently.
+  if (config.design.ttsProvider !== 'none' && rendered.length && !rendered.some((r) => r.hasAudio)) {
+    throw new Error(
+      `TTS_PROVIDER=${config.design.ttsProvider} produced no audio on any beat - ` +
+        `all ${rendered.length} short(s) are silent. See the [tts] warnings above for the reason.`,
+    );
+  }
+
   return rendered;
 }
 
