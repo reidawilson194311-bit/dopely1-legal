@@ -5,7 +5,7 @@ import { pickWinners, median, engagementRate } from '../src/lib/score.js';
 import { normalize, extractHook } from '../src/lib/normalize.js';
 import { overlapRatio, choosePillar } from '../src/skills/02-copywriter.js';
 import { wrapCaption, buildFilterGraph } from '../src/lib/video.js';
-import { composeCaption, drain } from '../src/skills/04-poster.js';
+import { composeCaption, drain, DEAD_POST_STATUS } from '../src/skills/04-poster.js';
 import { buildPlatforms, batched } from '../src/lib/publishers/submagic.js';
 import { wavHeader, pcmRate } from '../src/lib/tts.js';
 import { env } from '../src/config.js';
@@ -819,4 +819,27 @@ test('every pillar being recent falls back rather than returning nothing', () =>
 
 test('a single pillar is still a valid choice', () => {
   assert.equal(choosePillar([{ id: 'only', weight: 1 }], []).id, 'only');
+});
+
+// --- a dead post must not keep holding its slot -------------------------
+
+test('retired and failed posts free their slots again', () => {
+  // Six superseded rows and two failures filled both of one day's YouTube
+  // slots and both of the next, pushing the first working video two days out.
+  for (const status of ['superseded', 'schedule-failed', 'post-failed', 'cancelled']) {
+    assert.ok(DEAD_POST_STATUS.has(status), `${status} should free its slot`);
+  }
+});
+
+test('a live post still holds its slot', () => {
+  // Getting this wrong double-books a slot and publishes two videos at the
+  // same minute, which is worse than the drift it was meant to fix.
+  for (const status of ['queued', 'scheduled', 'published', 'posted']) {
+    assert.ok(!DEAD_POST_STATUS.has(status), `${status} must keep its slot`);
+  }
+});
+
+test('an unrecognised status keeps its slot rather than freeing it', () => {
+  assert.ok(!DEAD_POST_STATUS.has('some-future-status'));
+  assert.ok(!DEAD_POST_STATUS.has(undefined));
 });
