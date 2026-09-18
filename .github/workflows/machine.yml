@@ -46,9 +46,29 @@ on:
         type: string
         required: false
       show:
-        description: 'Print the latest scripts in full for review - reads only, generates nothing'
+        description: 'Print the latest rows in full for review - reads only, generates nothing'
         type: boolean
         default: false
+      show_table:
+        description: 'Which table to show: scripts | winners | renders | posts'
+        type: string
+        required: false
+      patch_id:
+        description: 'Correct one field on one row: the row id (also sets stages=patch)'
+        type: string
+        required: false
+      patch_field:
+        description: 'Field to set, e.g. status or beats.3.onScreenText'
+        type: string
+        required: false
+      patch_value:
+        description: 'New value'
+        type: string
+        required: false
+      patch_table:
+        description: 'Table the row is in (default scripts)'
+        type: string
+        required: false
       setup_airtable:
         description: 'Build the Airtable base (safe to re-run; never deletes or retypes a field)'
         type: boolean
@@ -102,6 +122,8 @@ jobs:
             echo "stages=probe-submagic" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.setup_airtable }}" = "true" ]; then
             echo "stages=setup-airtable" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.patch_id }}" ]; then
+            echo "stages=patch" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.requeue }}" = "true" ]; then
             echo "stages=requeue" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.show }}" = "true" ]; then
@@ -119,7 +141,8 @@ jobs:
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
           steps.plan.outputs.stages != 'show' &&
-          steps.plan.outputs.stages != 'requeue'
+          steps.plan.outputs.stages != 'requeue' &&
+          steps.plan.outputs.stages != 'patch'
         run: npm test
 
       - name: Install ffmpeg
@@ -128,7 +151,8 @@ jobs:
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
           steps.plan.outputs.stages != 'show' &&
-          steps.plan.outputs.stages != 'requeue'
+          steps.plan.outputs.stages != 'requeue' &&
+          steps.plan.outputs.stages != 'patch'
         # Kept for `doctor` too: it reports on ffmpeg and the caption filter,
         # and that answer is only useful if it describes the environment a real run would get.
         # The apt build includes libfreetype, so drawtext is available and
@@ -158,7 +182,8 @@ jobs:
         run: |
           if [ "$DRY_RUN_INPUT" = "true" ] || [ "$STAGES" = "doctor" ] || \
              [ "$STAGES" = "setup-airtable" ] || [ "$STAGES" = "probe-submagic" ] || \
-             [ "$STAGES" = "show" ] || [ "$STAGES" = "requeue" ]; then
+             [ "$STAGES" = "show" ] || [ "$STAGES" = "requeue" ] || \
+             [ "$STAGES" = "patch" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           missing=""
@@ -272,9 +297,25 @@ jobs:
               sed 's/\x1b\[[0-9;]*m//g' /tmp/requeue.txt
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.plan.outputs.stages }}" = "patch" ]; then
+            node src/cli.js patch \
+              --id='${{ inputs.patch_id }}' \
+              --field='${{ inputs.patch_field }}' \
+              --value='${{ inputs.patch_value }}' \
+              ${{ inputs.patch_table && format('--table={0}', inputs.patch_table) || '' }} \
+              | tee /tmp/patch.txt
+            {
+              echo '## Patched'
+              echo
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' /tmp/patch.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ steps.plan.outputs.stages }}" = "show" ]; then
             # Reads the store and prints it. No model calls, no spend.
-            node src/cli.js show --limit=10 | tee /tmp/show.txt
+            node src/cli.js show --limit=10 \
+              ${{ inputs.show_table && format('--table={0}', inputs.show_table) || '' }} \
+              | tee /tmp/show.txt
             {
               echo '## The batch'
               echo
@@ -310,7 +351,8 @@ jobs:
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
           steps.plan.outputs.stages != 'show' &&
-          steps.plan.outputs.stages != 'requeue'
+          steps.plan.outputs.stages != 'requeue' &&
+          steps.plan.outputs.stages != 'patch'
         uses: actions/upload-artifact@v4
         with:
           name: shorts-${{ github.run_id }}
