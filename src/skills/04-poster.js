@@ -112,6 +112,11 @@ export async function drain({
   return published;
 }
 
+/** A hosted URL outlives the runner that rendered the video; a local path does
+ * not. Either is enough to publish from. */
+const haveVideo = (render) =>
+  Boolean(render.videoUrl) || Boolean(render.videoPath && fs.existsSync(render.videoPath));
+
 export async function post({ limit, platforms = config.post.platforms } = {}) {
   log.banner('SKILL 04 / THE POSTER', 'It posts itself.');
   const store = getStore();
@@ -144,11 +149,24 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
     }));
   }
 
-  const renders = await store.list(TABLES.RENDERS, {
+  // Oldest first, but over the whole queue rather than the first `rate` rows.
+  // Renders made before hosting existed have no URL and no surviving file, and
+  // picking one used to fail the entire run while publishable rows sat behind
+  // it untouched.
+  const waiting = await store.list(TABLES.RENDERS, {
     where: (r) => r.status === 'ready-to-post',
     sort: (a, b) => String(a.renderedAt).localeCompare(String(b.renderedAt)),
-    limit: rate,
   });
+
+  for (const r of waiting.filter((x) => !haveVideo(x))) {
+    // Retire rather than skip, or every future run pays the same cost to reach
+    // the same conclusion. The script stays designed, so a requeue can
+    // re-render it whenever it is wanted.
+    log.warn(`"${r.title}" has no hosted URL and no local file - needs re-rendering`);
+    await store.patch(TABLES.RENDERS, r.id, { status: 'needs-rerender' });
+  }
+
+  const renders = waiting.filter(haveVideo).slice(0, rate);
   if (!renders.length) {
     log.warn('nothing rendered and waiting - run the designer first');
     return drained;
@@ -222,10 +240,6 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
     }
   }
 
-  // A hosted URL outlives the runner that rendered the video; the local path
-  // does not. Either is enough to publish from.
-  const haveVideo = (render) =>
-    Boolean(render.videoUrl) || Boolean(render.videoPath && fs.existsSync(render.videoPath));
   const announce = (row) =>
     log.info(`  ${row.platform.padEnd(9)} ${row.publishAtLocal} ${config.post.timezone}  "${row.title}"`);
 
