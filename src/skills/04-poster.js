@@ -21,6 +21,9 @@ import submagic from '../lib/publishers/submagic.js';
 
 const log = logger('04-post');
 
+/** Statuses whose publishAt will never be used, so their slot is free again. */
+export const DEAD_POST_STATUS = new Set(['superseded', 'schedule-failed', 'post-failed', 'cancelled']);
+
 const PUBLISHERS = { submagic, metricool, unipile };
 
 /** Trim a caption to the platform's limit and append its hashtags. */
@@ -157,9 +160,25 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
     log.warn(`PUBLISH_PROVIDER=${config.post.provider} - scheduling locally only, nothing will go live`);
   }
 
-  // Never double-book a slot across runs.
+  // Never double-book a slot across runs - but only a post that is actually
+  // going to happen holds one.
+  //
+  // This counted every row, so a retired or failed post kept a time nothing
+  // would ever publish at and pushed the next real one further out. Six
+  // superseded rows and two failures filled both of today's YouTube slots and
+  // both of tomorrow's, putting the first working video two days away, and the
+  // gap would have grown with every dead row.
+  //
+  // Deliberately an exclusion list rather than an inclusion one: mistaking a
+  // live post for a dead one double-books a slot and publishes two videos at
+  // the same minute, which is worse than drifting.
   const takenByPlatform = new Map(
-    platforms.map((p) => [p, history.filter((e) => e.platform === p).map((e) => e.publishAt)]),
+    platforms.map((p) => [
+      p,
+      history
+        .filter((e) => e.platform === p && !DEAD_POST_STATUS.has(e.status))
+        .map((e) => e.publishAt),
+    ]),
   );
 
   const scheduled = [];
