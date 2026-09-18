@@ -226,7 +226,11 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
           caption,
           youtubeTitle: render.youtubeTitle,
           videoPath: render.videoPath,
-          uploadedUrl: render.videoUrl || null,
+          // NOT uploadedUrl: that is how the publisher reaches the file, not
+          // something about the post. It was written here by mistake and
+          // Airtable rejected the whole row for the unknown column - after
+          // both videos had already been scheduled, leaving the schedule real
+          // and our record of it empty.
           publishAt: when.toISOString(),
           publishAtLocal: formatLocal(when),
           timezone: config.post.timezone,
