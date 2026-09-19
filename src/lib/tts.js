@@ -156,6 +156,17 @@ export async function speak(text, outPath) {
 export default speak;
 
 /**
+ * A plain sentence, not a word like "ok".
+ *
+ * Gemini's TTS models refuse anything that reads as an instruction or a
+ * question - "Model tried to generate text, but it should only be used for
+ * TTS" - so a one-word probe fails while real narration works, and the check
+ * reports a fault that is not there. It must look like a transcript, because
+ * that is what the model is for.
+ */
+const PING_TEXT = 'This is a short test of the narration voice.';
+
+/**
  * Prove the voice actually speaks, using the real request shape.
  *
  * A TTS model rejects a plain text-generation call - it needs
@@ -170,9 +181,9 @@ export async function ping() {
   const outPath = path.join(os.tmpdir(), `machine-tts-ping-${Date.now()}.mp3`);
   try {
     const written =
-      provider === 'gemini' ? await gemini('ok', outPath)
-      : provider === 'elevenlabs' ? await elevenlabs('ok', outPath)
-      : provider === 'openai-compatible' ? await openaiCompatible('ok', outPath)
+      provider === 'gemini' ? await gemini(PING_TEXT, outPath)
+      : provider === 'elevenlabs' ? await elevenlabs(PING_TEXT, outPath)
+      : provider === 'openai-compatible' ? await openaiCompatible(PING_TEXT, outPath)
       : (() => { throw new Error(`unknown TTS_PROVIDER: ${provider}`); })();
     const { size } = fs.statSync(written);
     if (!size) throw new Error('the provider returned an empty file');
