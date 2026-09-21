@@ -17,6 +17,11 @@ import { higgsfield } from '@higgsfield/client/v2';
 
 const ENDPOINT = 'bytedance/seedance-2.5/text-to-video';
 
+/** Video generation outlives the SDK's own polling window, so we wait here. */
+const MAX_WAIT_MS = 15 * 60 * 1000;
+const POLL_MS = 5000;
+const RUNNING = new Set(['queued', 'in_progress']);
+
 const INPUT = {
   prompt: 'A cinematic scene at sunset',
   duration: 5,
@@ -50,15 +55,48 @@ console.log(`  input      ${INPUT.duration}s ${INPUT.resolution} ${INPUT.aspect_
 console.log(`  prompt     "${INPUT.prompt}"`);
 console.log('\n  submitting (billable) and waiting for completion...\n');
 
-let res;
+// Submit WITHOUT the SDK's polling, then poll here.
+//
+// subscribe({withPolling: true}) gives up after its own maxPollTime and throws
+// - and it throws before returning anything, so the request_id goes with it.
+// A video generation that outlives that window is then already paid for and
+// unreachable. Capturing the id first means a slow job is always recoverable,
+// whatever happens next.
+let submitted;
 try {
-  res = await higgsfield.subscribe(ENDPOINT, { input: INPUT, withPolling: true });
+  submitted = await higgsfield.subscribe(ENDPOINT, { input: INPUT, withPolling: false });
 } catch (err) {
-  fail(`the request never completed: ${err instanceof Error ? err.message : String(err)}`);
+  fail(`the request was not accepted: ${err instanceof Error ? err.message : String(err)}`);
 }
 
-console.log(`  request_id ${res.request_id}`);
-console.log(`  status     ${res.status}`);
+console.log(`  request_id ${submitted.request_id}`);
+console.log(`  status_url ${submitted.status_url}`);
+console.log(`\n  waiting (up to ${Math.round(MAX_WAIT_MS / 60000)} min)...\n`);
+
+// The SDK builds this header from the same variable; reusing the value here
+// keeps polling under our control. It is never printed or logged.
+const authValue = process.env.HF_CREDENTIALS
+  ? `Key ${process.env.HF_CREDENTIALS}`
+  : `Key ${process.env.HF_API_KEY}:${process.env.HF_API_SECRET}`;
+
+let res = submitted;
+const deadline = Date.now() + MAX_WAIT_MS;
+while (RUNNING.has(String(res.status))) {
+  if (Date.now() > deadline) {
+    fail(
+      `still "${res.status}" after ${Math.round(MAX_WAIT_MS / 60000)} minutes. ` +
+        `The generation may still finish - it is request ${submitted.request_id}, ` +
+        `readable at ${submitted.status_url}.`,
+    );
+  }
+  await new Promise((r) => setTimeout(r, POLL_MS));
+  const r = await fetch(submitted.status_url, { headers: { authorization: authValue } });
+  if (!r.ok) fail(`polling ${submitted.status_url} returned ${r.status} ${r.statusText}`);
+  res = (await r.json()) as typeof submitted;
+  process.stdout.write(`  ${new Date().toISOString().slice(11, 19)}  ${res.status}\n`);
+}
+
+console.log(`\n  final      ${res.status}`);
 
 // Anything that is not `completed` is not a success, and each one means
 // something different to whoever has to act on it. `canceled` is absent from
