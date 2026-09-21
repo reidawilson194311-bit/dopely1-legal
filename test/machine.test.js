@@ -1198,3 +1198,24 @@ test('crime procedure and human interest score dull', () => {
   assert.ok(interestScore('Three sisters detained ahead of Islamabad march').score < 0);
   assert.ok(interestScore('Suspect charged and remanded in custody').score < 0);
 });
+
+test('an uncorroborated story clears a higher bar than a corroborated one', () => {
+  // A primary feed is the ORGANISATION's feed, not a discoveries feed. NASA's
+  // put an ethics notice, a festival appearance and the daily astronomy photo
+  // into the winners table, all waved past corroboration by the exemption
+  // meant for its missions.
+  const weak = story('Nebula photo of the day', ['nasa'], '');
+  const strong = story('Probe to fly past Earth for gravity assist', ['nasa'], '');
+  const opts = { minSources: 2, minInterest: 1, minInterestUncorroborated: 2,
+                 primarySources: ['nasa'], now: new Date() };
+  assert.equal(rankStories([weak], opts).length, 0, 'one bright word is not enough alone');
+  assert.equal(rankStories([strong], opts).length, 1, 'a real mission story clears it');
+  // The same weak story is fine once a second outlet attests to it.
+  const attested = story('Nebula photo of the day', ['nasa', 'phys-org'], '');
+  assert.equal(rankStories([attested], opts).length, 1, 'corroboration lowers the bar');
+});
+
+test('institutional housekeeping scores dull', () => {
+  assert.ok(interestScore('Widely Attended Gatherings (WAGs) Determinations').score < 0);
+  assert.ok(interestScore('Space Center Sparks Curiosity at Annual Japan Festival').score < 0);
+});

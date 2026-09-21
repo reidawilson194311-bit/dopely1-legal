@@ -105,6 +105,7 @@ export async function researchNews({ feeds = NICHE.newsFeeds, now = new Date() }
   const stories = rankStories(clusters, {
     minSources: config.news.minSources,
     minInterest: config.news.minInterest,
+    minInterestUncorroborated: config.news.minInterestUncorroborated,
     primarySources: feeds.filter((f) => f.primary).map((f) => f.source),
     keepTop: config.news.keepTop,
     now,

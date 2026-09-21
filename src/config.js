@@ -109,6 +109,13 @@ export const config = {
      * procedural. See src/lib/interest.js for what is being counted.
      */
     minInterest: num('NEWS_MIN_INTEREST', 1),
+    /**
+     * The bar for a story no second outlet carried. Higher, because a primary
+     * feed is an organisation's whole output - NASA's put an ethics notice and
+     * a festival appearance in the winners table through the corroboration
+     * exemption meant for its missions.
+     */
+    minInterestUncorroborated: num('NEWS_MIN_INTEREST_UNCORROBORATED', 2),
     /** Stories kept per run, most interesting first. */
     keepTop: num('NEWS_KEEP_TOP', 12),
   },

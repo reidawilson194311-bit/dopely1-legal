@@ -65,11 +65,28 @@ export function clusterStories(items, threshold = SAME_STORY) {
  * a space agency announcing its own mission. Asking a second outlet to confirm
  * what NASA said about NASA adds nothing, and the requirement silently deleted
  * every exciting story the science feeds broke.
+ *
+ * But a primary feed is an ORGANISATION's feed, not a discoveries feed, and it
+ * carries the organisation's whole output. NASA's breaking-news RSS put an
+ * ethics notice, a Japan Festival appearance and the daily astronomy photo
+ * into the winners table, all waved past corroboration by that same exemption.
+ *
+ * So an uncorroborated story clears a higher interest bar, which is the honest
+ * consequence of having no second opinion: when nothing else attests to a
+ * story, the only evidence it is worth covering is the story itself, and it
+ * had better be strong.
+ *
+ * Two, not three. Three was the first instinct and it was wrong: "Juice to fly
+ * past Earth for third gravity assist" scores two on its headline, so the
+ * stricter bar would have thrown out the best story of the run along with the
+ * noise. The junk is already dead on the word lists - the ethics notice scores
+ * -2 - so this only needs to catch what those miss, not to do their job again.
  */
 export function rankStories(clusters, {
   minSources = 2,
   keepTop = 12,
   minInterest = 1,
+  minInterestUncorroborated = 2,
   primarySources = [],
   now = new Date(),
 } = {}) {
@@ -105,7 +122,12 @@ export function rankStories(clusters, {
     // The interest gate. A story with no signal of discovery at all is not
     // worth a video, and an empty news day is a better outcome than a video
     // about a filing deadline - the other pillars keep the schedule fed.
-    .filter((s) => s.interest >= minInterest)
+    //
+    // Uncorroborated stories clear a higher bar. They are here on a primary
+    // outlet's word alone, and that outlet publishes its staff notices down
+    // the same pipe as its discoveries.
+    .filter((s) =>
+      s.interest >= (s.sourceCount >= minSources ? minInterest : minInterestUncorroborated))
     // Most interesting first. Corroboration breaks the tie, then freshness, so
     // between two equally interesting stories the better-attested and more
     // recent one wins.
