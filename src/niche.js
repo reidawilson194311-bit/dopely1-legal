@@ -90,7 +90,7 @@ export const NICHE = {
     { source: 'space-com',   url: 'https://www.space.com/feeds/all' },
     { source: 'quanta',      url: 'https://api.quantamagazine.org/feed/' },
     { source: 'smithsonian', url: 'https://www.smithsonianmag.com/rss/latest_articles/' },
-    { source: 'eurekalert',  url: 'https://www.eurekalert.org/rss/technology_engineering.xml' },
+    { source: 'nature',      url: 'https://www.nature.com/nature.rss' },
     { source: 'arstechnica', url: 'https://feeds.arstechnica.com/arstechnica/index' },
     { source: 'bbc-science', url: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml' },
     { source: 'guardian-sci',url: 'https://www.theguardian.com/science/rss' },
