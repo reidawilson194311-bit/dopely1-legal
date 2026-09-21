@@ -136,6 +136,64 @@ function systemPrompt() {
 }
 
 /**
+ * Extra rules for a story from the news desk.
+ *
+ * Read on top of the house rules, not instead of them, because the accuracy
+ * and beat rules matter MORE here, not less.
+ *
+ * Two constraints shape this, and both are external:
+ *
+ * A newsreader is the one format platforms name as unmonetisable. YouTube's
+ * inauthentic-content policy calls out "channels that read articles verbatim
+ * instead of analyzing them", so a script that restates the headline is worth
+ * nothing even when it is accurate. The value has to be the part the headline
+ * leaves out.
+ *
+ * And the pictures are generated, so they cannot show the event. Asking for a
+ * real person or a real moment produces either a refusal or an invention
+ * presented as footage. The scene is what can honestly be drawn: the place,
+ * the object, the empty room, the thing the story is about.
+ */
+function newsRules(winner) {
+  return [
+    '',
+    'THIS IS A NEWS STORY. The rules above still apply. These are extra.',
+    '',
+    `CORROBORATION: carried by ${winner.views} outlets (${winner.sourceOutlets || 'unknown'})`,
+    winner.ageHours != null ? `AGE: it broke about ${winner.ageHours} hours ago.` : '',
+    '',
+    'DO NOT READ THE HEADLINE BACK. A script that restates what the headline',
+    'already said is worth nothing - and it is specifically the format',
+    'platforms refuse to monetise. Earn the video by adding what the headline',
+    'leaves out: the mechanism behind it, the number that puts it in',
+    'proportion, the precedent it echoes, what actually changes next.',
+    '',
+    'STRUCTURE: open on what happened, in one line a stranger understands with',
+    'no prior context. Then why it matters. Then what happens next. The middle',
+    'is where the video earns its place.',
+    '',
+    'CERTAINTY: say only what is reported. If something is alleged, expected or',
+    'disputed, use those words. A confident sentence about an uncertain thing',
+    'is the way this format goes wrong, and it is not fixable after posting.',
+    'Where reports disagree, that disagreement IS the story - say so.',
+    '',
+    'NO PREDICTIONS stated as fact. "What happens next" means what has been',
+    'announced or scheduled, not what you expect.',
+    '',
+    'IMAGES: every imagePrompt must describe a SCENE, not a person and not a',
+    'moment from the event. The pictures are generated, so they cannot show',
+    'what happened and must never pretend to. Draw the place, the object, the',
+    'empty chamber, the machinery, the landscape - what the story is ABOUT.',
+    'No recognisable individuals, no crowds implying a specific event, nothing',
+    'that could be mistaken for footage.',
+    '',
+    'sourceNote: name the outlets that carried it and what each confirmed.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
  * Pick the pillar this script has to serve.
  *
  * The schema always listed every pillar and nothing ever chose between them,
@@ -156,16 +214,35 @@ export function choosePillar(pillars, recent = [], pick = Math.random) {
   return pool[pool.length - 1];
 }
 
+/** A story from the news desk, rather than a post that performed well. */
+export const isNewsWinner = (winner) => winner?.platform === 'news';
+
 function userPrompt(winner, recentTitles, pillar) {
+  // A news story is not a "reference post to launder" - it is an event to
+  // report. Framing it as something to take the idea from and reword invites
+  // exactly the headline-restatement the rules forbid.
+  const reference = isNewsWinner(winner)
+    ? [
+        'THE STORY (what was reported - not text to reuse):',
+        `  headline:  ${winner.hook}`,
+        `  outlets:   ${winner.sourceOutlets || 'unknown'} (${winner.views} independent)`,
+        winner.ageHours != null ? `  age:       about ${winner.ageHours} hours old` : '',
+        `  reported:  ${winner.caption?.slice(0, 900) || '(no summary)'}`,
+      ].filter(Boolean)
+    : [
+        'REFERENCE POST (performed well - use the idea, not the words):',
+        `  platform: ${winner.platform}`,
+        `  views: ${winner.views.toLocaleString()} (${winner.viralMultiple}x this account's median)`,
+        `  caption: ${winner.caption?.slice(0, 600) || '(none)'}`,
+      ];
+
   return [
     `PILLAR: write this one as "${pillar.id}" - ${pillar.label}.`,
-    'The reference post need not belong to that pillar; find the angle on its',
-    'idea that does.',
+    isNewsWinner(winner)
+      ? ''
+      : 'The reference post need not belong to that pillar; find the angle on its\nidea that does.',
     '',
-    'REFERENCE POST (performed well - use the idea, not the words):',
-    `  platform: ${winner.platform}`,
-    `  views: ${winner.views.toLocaleString()} (${winner.viralMultiple}x this account's median)`,
-    `  caption: ${winner.caption?.slice(0, 600) || '(none)'}`,
+    ...reference,
     '',
     recentTitles.length
       ? `ALREADY PUBLISHED - do not repeat these angles:\n${recentTitles.map((t) => `  - ${t}`).join('\n')}`
@@ -302,17 +379,27 @@ export async function write({ limit = config.copy.batchSize } = {}) {
         continue;
       }
 
-      const pillar = choosePillar(NICHE.pillars, recentPillars);
+      // A news story is always the news pillar - rotation picks the subject of
+      // an evergreen script, but it cannot make an event into psychology.
+      const news = isNewsWinner(winner);
+      const pillar = news
+        ? NICHE.pillars.find((p) => p.id === 'news')
+        : choosePillar(NICHE.pillars, recentPillars);
+
       const script = config.dryRun
         ? dryRunScript(winner)
         : await generateJSON({
-            system: systemPrompt(),
+            system: news ? `${systemPrompt()}\n${newsRules(winner)}` : systemPrompt(),
             prompt: userPrompt(winner, recentTitles, pillar),
             schema: scriptSchema(config.copy.beatsPerScript),
           });
 
       const spoken = [script.hook, ...script.beats.map((b) => b.voiceover)].join(' ');
-      const overlap = overlapRatio(winner.caption, spoken);
+      // For news the source text is the headline plus the outlet's own
+      // summary, and echoing THAT is the specific failure mode here - a script
+      // that reads the report back. So the guard runs against both.
+      const sourceText = news ? `${winner.hook} ${winner.caption || ''}` : winner.caption;
+      const overlap = overlapRatio(sourceText, spoken);
       if (overlap > OVERLAP_LIMIT) {
         log.warn(`too close to the source (${Math.round(overlap * 100)}% trigram echo), skipping`, winner.id);
         await store.patch(TABLES.WINNERS, winner.id, { status: 'rejected-overlap' });

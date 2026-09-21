@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 import { pickWinners, median, engagementRate } from '../src/lib/score.js';
 import { normalize, extractHook } from '../src/lib/normalize.js';
-import { overlapRatio, choosePillar } from '../src/skills/02-copywriter.js';
+import { overlapRatio, choosePillar, isNewsWinner } from '../src/skills/02-copywriter.js';
+import { NICHE } from '../src/niche.js';
 import { wrapCaption, buildFilterGraph } from '../src/lib/video.js';
 import { composeCaption, drain, DEAD_POST_STATUS } from '../src/skills/04-poster.js';
 import { buildPlatforms, batched } from '../src/lib/publishers/submagic.js';
@@ -1010,5 +1011,40 @@ test('different stories get different ids', () => {
   assert.notEqual(
     storyId('Rocket launch delayed by bad weather'),
     storyId('Central bank holds interest rates steady'),
+  );
+});
+
+// --- the news pillar -----------------------------------------------------
+
+test('a news winner is recognised by its source, not its shape', () => {
+  assert.equal(isNewsWinner({ platform: 'news' }), true);
+  assert.equal(isNewsWinner({ platform: 'tiktok' }), false);
+  assert.equal(isNewsWinner({}), false);
+  assert.equal(isNewsWinner(null), false);
+  assert.equal(isNewsWinner(undefined), false);
+});
+
+test('the news pillar exists for stories to be assigned to', () => {
+  // The writer forces this pillar for a news winner rather than rotating,
+  // so its absence would mean an undefined pillar reaching the prompt.
+  const pillar = NICHE.pillars.find((p) => p.id === 'news');
+  assert.ok(pillar, 'NICHE.pillars must carry a news pillar');
+  assert.ok(pillar.label);
+});
+
+test('a script echoing the report is caught, headline and summary alike', () => {
+  // The failure mode for news is reading the report back, and the report is
+  // the headline PLUS the outlet summary - measuring only one lets a script
+  // lift the other wholesale.
+  const headline = 'Central bank holds interest rates steady at four percent';
+  const summary = 'The decision was widely expected by economists after inflation eased.';
+  const source = `${headline} ${summary}`;
+
+  assert.ok(overlapRatio(source, headline) > 0.5, 'lifting the headline is an echo');
+  assert.ok(overlapRatio(source, summary) > 0.5, 'lifting the summary is an echo too');
+  assert.equal(
+    overlapRatio(source, 'Borrowing costs stay put for a fourth straight meeting.'),
+    0,
+    'an original line about the same event is not an echo',
   );
 });
