@@ -35,13 +35,17 @@ export async function assertSchema({ fatal = true } = {}) {
     return { checked: false };
   }
 
-  const missing = SCHEMA.flatMap((spec) =>
-    diffTable(spec, live.get(spec.name.toLowerCase())).missing.map((f) => `${spec.name}.${f.name}`),
-  );
+  const missing = [];
+  for (const spec of SCHEMA) {
+    const d = diffTable(spec, live.get(spec.name.toLowerCase()));
+    missing.push(...d.missing.map((f) => `${spec.name}.${f.name}`));
+    // A select rejecting an unknown choice is the same 422, just as late.
+    missing.push(...(d.missingChoices || []).map((c) => `${spec.name}.${c}`));
+  }
   if (!missing.length) return { checked: true, missing: [] };
 
   const message =
-    `Airtable is missing ${missing.length} field(s) the code writes: ${missing.join(', ')}. ` +
+    `Airtable cannot accept ${missing.length} thing(s) the code writes: ${missing.join(', ')}. ` +
     'Run the workflow with setup_airtable to add them. Starting now would fail at the ' +
     'first upsert, after the generation has been paid for.';
   if (fatal) throw new Error(message);

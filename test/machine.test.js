@@ -1048,3 +1048,41 @@ test('a script echoing the report is caught, headline and summary alike', () => 
     'an original line about the same event is not an echo',
   );
 });
+
+// --- schema drift: a select choice fails exactly like a missing column ---
+
+test('a missing select choice is reported, not just a missing field', () => {
+  // Adding a status to the code without adding the choice is a write-time
+  // 422, identical to an unknown column and invisible to a name/type check.
+  const spec = {
+    name: 'Scripts',
+    fields: [
+      { name: 'id', type: 'singleLineText' },
+      { name: 'status', type: 'singleSelect', options: { choices: [{ name: 'a' }, { name: 'b' }] } },
+    ],
+  };
+  const live = {
+    fields: [
+      { name: 'id', type: 'singleLineText' },
+      { name: 'status', type: 'singleSelect', options: { choices: [{ name: 'a', id: 'x' }] } },
+    ],
+  };
+  const d = diffTable(spec, live);
+  assert.deepEqual(d.missing, [], 'the field itself is present');
+  assert.deepEqual(d.missingChoices, ['status="b"']);
+});
+
+test('a select whose choices all exist reports nothing', () => {
+  const spec = {
+    name: 'T',
+    fields: [{ name: 'status', type: 'singleSelect', options: { choices: [{ name: 'a' }] } }],
+  };
+  const live = { fields: [{ name: 'status', type: 'singleSelect', options: { choices: [{ name: 'a', id: 'x' }] } }] };
+  assert.deepEqual(diffTable(spec, live).missingChoices, []);
+});
+
+test('a non-select field never reports choices', () => {
+  const spec = { name: 'T', fields: [{ name: 'title', type: 'singleLineText' }] };
+  const live = { fields: [{ name: 'title', type: 'singleLineText' }] };
+  assert.deepEqual(diffTable(spec, live).missingChoices, []);
+});

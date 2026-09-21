@@ -83,6 +83,17 @@ export const config = {
     keepTop: num('RESEARCH_KEEP_TOP', 40),
   },
 
+  /**
+   * News scripts wait for a human before anything is rendered or published.
+   *
+   * The evergreen pillars are checkable after the fact: a wrong number about
+   * reindeer is embarrassing and fixable. A confident sentence about a live
+   * event is neither, and the news desk will keep finding conflict stories
+   * because that is what world feeds carry. Set REVIEW_NEWS=false to let them
+   * through unattended.
+   */
+  reviewNews: bool('REVIEW_NEWS', true),
+
   /** Skill 01b: the news researcher. */
   news: {
     /** Only stories that broke inside this window are eligible. */

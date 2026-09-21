@@ -428,14 +428,20 @@ export async function write({ limit = config.copy.batchSize } = {}) {
         slug: slug(script.title),
         ...script,
         overlapRatio: Number(overlap.toFixed(3)),
-        status: 'ready-to-design',
+        // A news script stops here until somebody reads it. The designer only
+        // takes 'ready-to-design', so nothing is rendered or paid for in the
+        // meantime and no unreviewed story can reach the schedule.
+        status: news && config.reviewNews ? 'needs-review' : 'ready-to-design',
         writtenAt: new Date().toISOString(),
       };
       written.push(row);
       recentTitles.push(script.title);
       recentPillars.push(script.pillar);
       await store.patch(TABLES.WINNERS, winner.id, { status: 'used' });
-      log.info(`  wrote "${script.title}" [${script.pillar}] ${script.beats.length} beats`);
+      log.info(
+        `  wrote "${script.title}" [${script.pillar}] ${script.beats.length} beats` +
+          (row.status === 'needs-review' ? '  HELD FOR REVIEW' : ''),
+      );
     } catch (err) {
       if (err instanceof DeclinedError) {
         log.warn('declined, marking the source and moving on', winner.id);

@@ -66,11 +66,14 @@ async function status() {
  * Print the scripts in full, so a batch can be read before it is published.
  * `status` counts rows; reviewing the writing needs the writing.
  */
-async function show({ limit = 10, table = 'scripts' } = {}) {
+async function show({ limit = 10, table = 'scripts', status = null } = {}) {
   const store = getStore();
-  const rows = (await store.list(table)).slice(-limit);
+  const all = await store.list(table);
+  // Filtering matters most for review: "what is waiting on me" should not
+  // mean reading the last ten rows and working it out.
+  const rows = (status ? all.filter((r) => r.status === status) : all).slice(-limit);
   if (!rows.length) {
-    console.log(`\n  nothing in ${table}\n`);
+    console.log(`\n  nothing in ${table}${status ? ` with status "${status}"` : ''}\n`);
     return;
   }
   for (const r of rows) {
@@ -361,7 +364,7 @@ dopely1-shorts-machine - scrape, reword, design, post. 0 humans.
   machine research | write | design | post
   machine drain     publish held posts whose slot is due (Unipile only)
   machine status
-  machine show [--limit=N] [--table=scripts|winners|renders|posts]
+  machine show [--limit=N] [--table=scripts|winners|renders|posts] [--status=S]
   machine requeue [--table=T] [--from=STATUS] [--to=STATUS] [--limit=N]
   machine patch --id=ID --field=PATH --value=TEXT [--table=T]
   machine doctor
@@ -409,7 +412,11 @@ async function main() {
     return 0;
   }
   if (command === 'show') {
-    await show({ limit: Number(flags.limit) || 10, table: flags.table || 'scripts' });
+    await show({
+      limit: Number(flags.limit) || 10,
+      table: flags.table || 'scripts',
+      status: flags.status || null,
+    });
     return 0;
   }
   if (command === 'doctor') return (await doctor()) ? 0 : 1;

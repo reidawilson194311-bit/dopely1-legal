@@ -113,9 +113,9 @@ async function syncBase() {
     }
 
     // Never retype a column that already holds data; report and move on.
-    const { missing, wrongType } = diffTable(spec, table);
+    const { missing, wrongType, missingChoices } = diffTable(spec, table);
 
-    if (!missing.length && !wrongType.length) {
+    if (!missing.length && !wrongType.length && !missingChoices.length) {
       say(`${spec.name}: ${c.ok}up to date${c.off} (${table.fields.length} fields)`);
       continue;
     }
@@ -125,6 +125,33 @@ async function syncBase() {
       for (const field of missing) {
         if (!DRY) await api(`/bases/${BASE}/tables/${table.id}/fields`, { method: 'POST', body: field });
         added++;
+      }
+    }
+    if (missingChoices.length) {
+      // A select silently rejects a value outside its choices, and adding a
+      // field never fixes that - without this the base reports "up to date"
+      // while every write of the new value still fails.
+      //
+      // The PATCH must carry the EXISTING choices with their ids alongside the
+      // new ones: sending only the additions replaces the list and orphans
+      // every row already holding one of the old values.
+      say(`${spec.name}: adding ${missingChoices.length} choice(s): ${missingChoices.join(', ')}`);
+      const byFieldName = new Map((table.fields || []).map((f) => [f.name, f]));
+      for (const field of spec.fields) {
+        const want = field.options?.choices?.map((c) => c.name);
+        const live = byFieldName.get(field.name);
+        if (!want || !live) continue;
+        const have = live.options?.choices || [];
+        const haveNames = new Set(have.map((c) => c.name));
+        const additions = want.filter((n) => !haveNames.has(n)).map((name) => ({ name }));
+        if (!additions.length) continue;
+        if (!DRY) {
+          await api(`/bases/${BASE}/tables/${table.id}/fields/${live.id}`, {
+            method: 'PATCH',
+            body: { options: { choices: [...have, ...additions] } },
+          });
+        }
+        added += additions.length;
       }
     }
     if (wrongType.length) {
