@@ -73,6 +73,10 @@ on:
         description: 'Build the Airtable base (safe to re-run; never deletes or retypes a field)'
         type: boolean
         default: false
+      probe_higgsfield:
+        description: 'Ask the Higgsfield API which submit path exists, and follow one generation'
+        type: boolean
+        default: false
       probe_submagic:
         description: 'Ask the Submagic API which endpoints exist (read-only; publishes nothing)'
         type: boolean
@@ -118,6 +122,8 @@ jobs:
               '30 * * * *') echo "stages=drain" >> "$GITHUB_OUTPUT" ;;
               *)            echo "stages=write,design,post" >> "$GITHUB_OUTPUT" ;;
             esac
+          elif [ "${{ inputs.probe_higgsfield }}" = "true" ]; then
+            echo "stages=probe-higgsfield" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.probe_submagic }}" = "true" ]; then
             echo "stages=probe-submagic" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.setup_airtable }}" = "true" ]; then
@@ -140,6 +146,7 @@ jobs:
           steps.plan.outputs.stages != 'doctor' &&
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
+          steps.plan.outputs.stages != 'probe-higgsfield' &&
           steps.plan.outputs.stages != 'show' &&
           steps.plan.outputs.stages != 'requeue' &&
           steps.plan.outputs.stages != 'patch'
@@ -150,6 +157,7 @@ jobs:
           steps.plan.outputs.stages != 'drain' &&
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
+          steps.plan.outputs.stages != 'probe-higgsfield' &&
           steps.plan.outputs.stages != 'show' &&
           steps.plan.outputs.stages != 'requeue' &&
           steps.plan.outputs.stages != 'patch'
@@ -182,6 +190,7 @@ jobs:
         run: |
           if [ "$DRY_RUN_INPUT" = "true" ] || [ "$STAGES" = "doctor" ] || \
              [ "$STAGES" = "setup-airtable" ] || [ "$STAGES" = "probe-submagic" ] || \
+             [ "$STAGES" = "probe-higgsfield" ] || \
              [ "$STAGES" = "show" ] || [ "$STAGES" = "requeue" ] || \
              [ "$STAGES" = "patch" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0
@@ -250,6 +259,10 @@ jobs:
           TTS_API_KEY: ${{ secrets.TTS_API_KEY }}
           TTS_VOICE_ID: ${{ vars.TTS_VOICE_ID }}
           TTS_MODEL: ${{ vars.TTS_MODEL }}
+          IMAGE_PROVIDER: ${{ vars.IMAGE_PROVIDER }}
+          HIGGSFIELD_KEY_ID: ${{ secrets.HIGGSFIELD_KEY_ID }}
+          HIGGSFIELD_KEY_SECRET: ${{ secrets.HIGGSFIELD_KEY_SECRET }}
+          HIGGSFIELD_IMAGE_MODEL: ${{ vars.HIGGSFIELD_IMAGE_MODEL }}
           PUBLISH_PROVIDER: ${{ vars.PUBLISH_PROVIDER }}
           METRICOOL_USER_TOKEN: ${{ secrets.METRICOOL_USER_TOKEN }}
           METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}
@@ -261,7 +274,16 @@ jobs:
           UNIPILE_ACCOUNT_YOUTUBE: ${{ secrets.UNIPILE_ACCOUNT_YOUTUBE }}
           PUBLISH_TIMEZONE: ${{ vars.PUBLISH_TIMEZONE || 'America/New_York' }}
         run: |
-          if [ "${{ steps.plan.outputs.stages }}" = "probe-submagic" ]; then
+          if [ "${{ steps.plan.outputs.stages }}" = "probe-higgsfield" ]; then
+            node scripts/probe-higgsfield.js | tee /tmp/hf.txt || true
+            {
+              echo '## Higgsfield API probe'
+              echo
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' /tmp/hf.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.plan.outputs.stages }}" = "probe-submagic" ]; then
             # Read-only: GETs only, so nothing can be published by accident.
             node scripts/probe-submagic.js \
               ${{ inputs.probe_publish_post && '--post-publish' || '' }} \
@@ -350,6 +372,7 @@ jobs:
           steps.plan.outputs.stages != 'doctor' &&
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
+          steps.plan.outputs.stages != 'probe-higgsfield' &&
           steps.plan.outputs.stages != 'show' &&
           steps.plan.outputs.stages != 'requeue' &&
           steps.plan.outputs.stages != 'patch'

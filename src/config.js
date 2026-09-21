@@ -114,6 +114,21 @@ export const config = {
 
   // ---- Skill 03: the designer ---------------------------------------------
   design: {
+    /**
+     * Which service draws the pictures: 'gemini' | 'higgsfield'.
+     * The designer does not care which; both expose generateImage.
+     */
+    imageProvider: env('IMAGE_PROVIDER', 'gemini'),
+    higgsfield: {
+      baseUrl: env('HIGGSFIELD_BASE_URL', 'https://api.higgsfield.ai'),
+      /** Auth is a key PAIR, not a single bearer token. */
+      keyId: env('HIGGSFIELD_KEY_ID'),
+      keySecret: env('HIGGSFIELD_KEY_SECRET'),
+      imageModel: env('HIGGSFIELD_IMAGE_MODEL', 'flux-pro/kontext/max/text-to-image'),
+      aspectRatio: env('HIGGSFIELD_ASPECT_RATIO', '9:16'),
+      pollMs: num('HIGGSFIELD_POLL_MS', 4000),
+      readyTimeoutMs: num('HIGGSFIELD_READY_TIMEOUT_MS', 300000),
+    },
     /** Google's "nano banana" image model. */
     geminiApiKey: env('GEMINI_API_KEY'),
     // gemini-2.5-flash-image IS nano banana, and it answers on a free key.

@@ -8,6 +8,7 @@ import { wrapCaption, buildFilterGraph } from '../src/lib/video.js';
 import { composeCaption, drain, DEAD_POST_STATUS } from '../src/skills/04-poster.js';
 import { buildPlatforms, batched } from '../src/lib/publishers/submagic.js';
 import { wavHeader, pcmRate } from '../src/lib/tts.js';
+import { firstAssetUrl } from '../src/lib/images/higgsfield.js';
 import { env } from '../src/config.js';
 import { createJsonStore } from '../src/lib/store/jsonStore.js';
 import fs from 'node:fs';
@@ -842,4 +843,29 @@ test('a live post still holds its slot', () => {
 test('an unrecognised status keeps its slot rather than freeing it', () => {
   assert.ok(!DEAD_POST_STATUS.has('some-future-status'));
   assert.ok(!DEAD_POST_STATUS.has(undefined));
+});
+
+// --- higgsfield returns its asset at a path the SDK describes loosely -----
+
+test('the asset url is found in the documented job shape', () => {
+  const status = { status: 'completed', jobs: [{ results: { raw: { url: 'https://cdn/a.png' } } }] };
+  assert.equal(firstAssetUrl(status), 'https://cdn/a.png');
+});
+
+test('a jobSet wrapper is unwrapped too', () => {
+  const status = { jobSet: { jobs: [{ results: { raw: { url: 'https://cdn/b.png' } } }] } };
+  assert.equal(firstAssetUrl(status), 'https://cdn/b.png');
+});
+
+test('the first job carrying a url wins, not the first job', () => {
+  // A multi-job set can report an empty job first; taking jobs[0] blindly
+  // would decide the generation produced nothing.
+  const status = { jobs: [{ results: {} }, { results: { raw: { url: 'https://cdn/c.png' } } }] };
+  assert.equal(firstAssetUrl(status), 'https://cdn/c.png');
+});
+
+test('no url anywhere returns null rather than undefined-ish truthiness', () => {
+  assert.equal(firstAssetUrl({ status: 'completed', jobs: [] }), null);
+  assert.equal(firstAssetUrl({}), null);
+  assert.equal(firstAssetUrl(null), null);
 });
