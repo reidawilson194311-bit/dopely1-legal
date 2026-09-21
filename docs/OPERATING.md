@@ -116,3 +116,27 @@ forever. Worth tracking by hand, monthly:
   `sourceNote` flags unsourceable claims, but neither is a taste check. That is
   still yours, and it is the reason to look at the output even when nothing is
   broken.
+
+## Reviewing news scripts
+
+News scripts are held. Everything else runs unattended.
+
+The evergreen pillars are checkable after the fact - a wrong number about
+reindeer is embarrassing and fixable. A confident sentence about a live event
+is neither, and the world feeds carry a lot of conflict.
+
+A news script is written with status `needs-review` and stops there. The
+designer only takes `ready-to-design`, so nothing is rendered, nothing is paid
+for and nothing reaches the schedule until it is approved.
+
+**See what is waiting** - run the workflow with `show`, `show_table=scripts`,
+`show_status=needs-review`.
+
+**Approve all of them** - run with `requeue`, `requeue_table=scripts`,
+`requeue_from=needs-review`, `requeue_to=ready-to-design`.
+
+**Reject one** - run with `patch_id=<the script id>`, `patch_field=status`,
+`patch_value=rejected`. `show` prints the id at the top of each script.
+
+**Stop holding them** - set the `REVIEW_NEWS` repository variable to `false`.
+The gate is on by default.

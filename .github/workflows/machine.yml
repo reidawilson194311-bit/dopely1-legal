@@ -53,6 +53,10 @@ on:
         description: 'Which table to show: scripts | winners | renders | posts'
         type: string
         required: false
+      show_status:
+        description: 'Only rows with this status, e.g. needs-review'
+        type: string
+        required: false
       patch_id:
         description: 'Correct one field on one row: the row id (also sets stages=patch)'
         type: string
@@ -363,6 +367,7 @@ jobs:
             # Reads the store and prints it. No model calls, no spend.
             node src/cli.js show --limit=10 \
               ${{ inputs.show_table && format('--table={0}', inputs.show_table) || '' }} \
+              ${{ inputs.show_status && format('--status={0}', inputs.show_status) || '' }} \
               | tee /tmp/show.txt
             {
               echo '## The batch'
