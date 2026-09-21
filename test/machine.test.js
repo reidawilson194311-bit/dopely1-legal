@@ -996,8 +996,8 @@ test('at equal interest, more corroborated outranks fresher', () => {
     { title: 'Rocket launch delayed by bad weather', url: 'a', source: 'bbc', publishedAt: at(1) },
     { title: 'Bad weather delays rocket launch', url: 'b', source: 'npr', publishedAt: at(1) },
     { title: 'Weather forces rocket launch delay', url: 'c', source: 'cbc', publishedAt: at(1) },
-    { title: 'Satellite launch slips to next week', url: 'd', source: 'bbc', publishedAt: at(11) },
-    { title: 'Next week for slipped satellite launch', url: 'e', source: 'npr', publishedAt: at(11) },
+    { title: 'Balloon launch postponed until Friday', url: 'd', source: 'bbc', publishedAt: at(11) },
+    { title: 'Friday postponement for the balloon launch', url: 'e', source: 'npr', publishedAt: at(11) },
   ];
   const ranked = rankStories(clusterStories(items), { minSources: 2, now: at(12) });
   assert.equal(ranked.length, 2, 'both stories clear both gates');
@@ -1163,4 +1163,38 @@ test('an uncorroborated non-primary story is still dropped', () => {
     { minSources: 2, primarySources: ['nasa'], now: new Date() },
   );
   assert.equal(out.length, 0);
+});
+
+test('the harshness screen covers the variants the first live run leaked', () => {
+  // Both of these reached the winners table. The list held `killing` but not
+  // `killings`, and `dead` but not `dies`. A word list that is one inflection
+  // short is a story published.
+  assert.equal(harshMatch('Man, 82, dies after beach fight over sunlounger'), 'dies');
+  assert.equal(
+    harshMatch("Patrick Clancy opens up on children's killings in first interview"),
+    'killings',
+  );
+  for (const w of ['die', 'died', 'dying', 'death', 'killer', 'victims', 'slaying']) {
+    assert.ok(harshMatch(`report says ${w} confirmed`), w);
+  }
+});
+
+test('generic novelty words do not make a story interesting', () => {
+  // `first` scored a child-killing story as interesting because the interview
+  // was the "first televised" one. Novelty has to be novel on its own.
+  assert.equal(interestScore('the first televised interview').bright.includes('first'), false);
+  assert.ok(interestScore('the first-ever image of a black hole').score > 0);
+});
+
+test('a plain space story scores on its headline alone', () => {
+  // "Juice to fly past Earth for third gravity assist" scored zero on its
+  // title and survived only on incidental words in its summary - the space
+  // vocabulary was missing from the list entirely.
+  assert.ok(interestScore('Juice to fly past Earth for third gravity assist').score > 0);
+  assert.ok(interestScore('Probe enters orbit around the planet').score > 0);
+});
+
+test('crime procedure and human interest score dull', () => {
+  assert.ok(interestScore('Three sisters detained ahead of Islamabad march').score < 0);
+  assert.ok(interestScore('Suspect charged and remanded in custody').score < 0);
 });

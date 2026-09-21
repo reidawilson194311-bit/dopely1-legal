@@ -30,7 +30,11 @@ const BRIGHT = [
   'detected', 'spotted', 'identified', 'solve', 'solved', 'decoded',
   'deciphered', 'breakthrough',
   // novelty and scale
-  'first', 'first-ever', 'never before', 'unprecedented', 'record-breaking',
+  // NOT bare `first` or `record`. Both looked like novelty words and both are
+  // mostly filler: the first live run scored a story about a child's killing
+  // as interesting because the interview was the "first televised" one. A
+  // novelty word has to be novel on its own.
+  'first-ever', 'never before', 'unprecedented', 'record-breaking',
   'oldest', 'largest', 'biggest', 'smallest', 'fastest', 'brightest',
   'deepest', 'rarest', 'closest', 'new species', 'new type',
   // mystery
@@ -39,8 +43,15 @@ const BRIGHT = [
   'hidden', 'secrets', 'lost', 'buried',
   // space
   'nasa', 'telescope', 'galaxy', 'black hole', 'exoplanet', 'asteroid',
-  'comet', 'meteorite', 'spacecraft', 'orbit', 'rover', 'moon', 'mars',
-  'jupiter', 'saturn', 'solar', 'supernova', 'nebula', 'cosmic', 'launch',
+  'comet', 'meteorite', 'spacecraft', 'orbit', 'orbits', 'rover', 'moon',
+  'mars', 'jupiter', 'saturn', 'solar', 'supernova', 'nebula', 'cosmic',
+  'cosmos', 'launch', 'launches',
+  // The plain vocabulary of a space story, missing from the first cut. "Juice
+  // to fly past Earth for third gravity assist" - a probe, a flyby, a gravity
+  // assist - scored zero on its headline and only survived on its summary.
+  'earth', 'gravity', 'flyby', 'mission', 'probe', 'satellite', 'planet',
+  'planets', 'star', 'stars', 'universe', 'astronaut', 'astronomer',
+  'astronomers', 'astronomy', 'atmosphere', 'lunar', 'interstellar',
   // earth and life
   'fossil', 'fossils', 'dinosaur', 'dinosaurs', 'ancient', 'prehistoric',
   'archaeology', 'archaeologist', 'archaeologists', 'archaeological', 'tomb',
@@ -51,7 +62,8 @@ const BRIGHT = [
   'quantum', 'dna', 'genome', 'brain', 'neuron', 'antibiotic', 'vaccine',
   'cure', 'treatment', 'material', 'materials', 'superconductor', 'battery',
   'fusion', 'robot', 'prototype', 'invention', 'experiment', 'evolution',
-  'origin', 'theory', 'physics',
+  'origin', 'theory', 'physics', 'chemistry', 'biology', 'scientist',
+  'scientists', 'researcher', 'researchers', 'study', 'studies',
 ];
 
 /**
@@ -80,11 +92,23 @@ const DULL = [
   // law
   'lawsuit', 'court', 'ruling', 'appeal', 'verdict', 'indictment',
   'prosecutor', 'plaintiff', 'settlement', 'regulator', 'compliance',
+  // Crime procedure and human interest. Not harsh enough for the violence
+  // screen, not remotely what this channel is - "three sisters detained ahead
+  // of march" cleared both gates on the first live run.
+  'detained', 'detention', 'arrest', 'arrested', 'custody', 'charged',
+  'convicted', 'sentenced', 'jailed', 'prison', 'extradition', 'suspect',
+  'protest', 'protests', 'rally', 'march', 'interview', 'anniversary',
+  'tribute', 'memorial', 'funeral',
 ];
 
+// Longest alternative first, for the same reason as the harshness screen: an
+// alternation reports the earliest-listed branch, not the most specific one.
 const build = (words) =>
   new RegExp(
-    `\\b(?:${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`,
+    `\\b(?:${[...words]
+      .sort((a, b) => b.length - a.length)
+      .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('|')})\\b`,
     'gi',
   );
 
