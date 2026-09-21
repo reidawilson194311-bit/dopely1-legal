@@ -54,6 +54,30 @@ export const NICHE = {
     { id: 'money-life',     label: 'Money and life mechanics',weight: 2 },
     { id: 'history-bite',   label: 'History in 30 seconds',   weight: 1 },
     { id: 'internet',       label: 'Internet and pop culture',weight: 1 },
+    { id: 'news',           label: 'What just happened',      weight: 2 },
+  ],
+
+  /**
+   * Feeds for the news pillar.
+   *
+   * Chosen to be INDEPENDENT of each other, because the scoring signal is how
+   * many separate outlets carried a story. Three feeds that syndicate the same
+   * wire copy would agree on everything and prove nothing.
+   *
+   * Read for headlines and summaries only - what happened, not how anyone
+   * phrased it. Nothing from a feed is ever republished.
+   */
+  newsFeeds: [
+    { source: 'bbc',        url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
+    { source: 'npr',        url: 'https://feeds.npr.org/1001/rss.xml' },
+    { source: 'guardian',   url: 'https://www.theguardian.com/world/rss' },
+    { source: 'aljazeera',  url: 'https://www.aljazeera.com/xml/rss/all.xml' },
+    { source: 'cbc',        url: 'https://www.cbc.ca/webfeed/rss/rss-world' },
+    { source: 'skynews',    url: 'https://feeds.skynews.com/feeds/rss/world.xml' },
+    { source: 'nasa',       url: 'https://www.nasa.gov/rss/dyn/breaking_news.rss' },
+    { source: 'arstechnica',url: 'https://feeds.arstechnica.com/arstechnica/index' },
+    { source: 'newscientist', url: 'https://www.newscientist.com/feed/home/' },
+    { source: 'phys-org',   url: 'https://phys.org/rss-feed/' },
   ],
 
   /**

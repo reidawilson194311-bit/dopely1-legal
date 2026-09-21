@@ -20,6 +20,7 @@
 import { config } from './config.js';
 import { logger } from './lib/log.js';
 import research from './skills/01-researcher.js';
+import researchNews from './skills/01b-news.js';
 import write from './skills/02-copywriter.js';
 import design from './skills/03-designer.js';
 import post from './skills/04-poster.js';
@@ -29,6 +30,7 @@ const log = logger('machine');
 
 export const STAGES = {
   research: { fn: research, label: '01 SCRAPE' },
+  news: { fn: researchNews, label: '01b NEWS ' },
   write: { fn: write, label: '02 REWORD' },
   design: { fn: design, label: '03 DESIGN' },
   post: { fn: post, label: '04 POST' },
@@ -86,6 +88,7 @@ async function summary(results, failures, started) {
   log.banner('THE MACHINE', 'Scrape, reword, design, post.');
   const rows = [
     ['01 SCRAPE', results.research?.length ?? '-', winners],
+    ['01b NEWS ', results.news?.length ?? '-', winners],
     ['02 REWORD', results.write?.length ?? '-', scripts],
     ['03 DESIGN', results.design?.length ?? '-', renders],
     ['04 POST', results.post?.length ?? '-', posts],

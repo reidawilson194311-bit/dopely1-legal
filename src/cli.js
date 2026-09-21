@@ -4,6 +4,7 @@
  *
  *   machine run                 the whole loop: scrape -> reword -> design -> post
  *   machine research            01 only
+ *   machine news                01b only - read the wires
  *   machine write               02 only
  *   machine design              03 only
  *   machine post                04 only

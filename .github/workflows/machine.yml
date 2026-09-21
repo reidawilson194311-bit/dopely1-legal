@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       stages:
-        description: 'Comma-separated stages (research,write,design,post)'
+        description: 'Comma-separated stages (research,news,write,design,post)'
         required: false
         default: 'write,design,post'
       dry_run:
@@ -124,7 +124,7 @@ jobs:
             case "${{ github.event.schedule }}" in
               '0 6 * * 1')  echo "stages=research" >> "$GITHUB_OUTPUT" ;;
               '30 * * * *') echo "stages=drain" >> "$GITHUB_OUTPUT" ;;
-              *)            echo "stages=write,design,post" >> "$GITHUB_OUTPUT" ;;
+              *)            echo "stages=news,write,design,post" >> "$GITHUB_OUTPUT" ;;
             esac
           elif [ "${{ inputs.seedance }}" = "true" ]; then
             echo "stages=seedance" >> "$GITHUB_OUTPUT"

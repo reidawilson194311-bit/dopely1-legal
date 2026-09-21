@@ -24,6 +24,9 @@ import { TABLES, diffTable } from '../scripts/airtable-schema.js';
 import {
   similarity, contentTokens, findDuplicate, corpusStopwords, DUPLICATE_THRESHOLD,
 } from '../src/lib/similarity.js';
+import { parseFeed, textOf, linkOf, dateOf, decodeEntities } from '../src/lib/rss.js';
+import { clusterStories, rankStories } from '../src/lib/cluster.js';
+import { storyId } from '../src/skills/01b-news.js';
 
 // --- 01 researcher ----------------------------------------------------------
 
@@ -868,4 +871,144 @@ test('no url anywhere returns null rather than undefined-ish truthiness', () => 
   assert.equal(firstAssetUrl({ status: 'completed', jobs: [] }), null);
   assert.equal(firstAssetUrl({}), null);
   assert.equal(firstAssetUrl(null), null);
+});
+
+// --- rss: the two shapes that exist in the wild --------------------------
+
+const RSS2 = `<rss><channel>
+  <item>
+    <title>Rocket launch delayed by weather</title>
+    <link>https://example.com/a</link>
+    <description>The launch slipped to Thursday.</description>
+    <pubDate>Wed, 17 Sep 2026 10:00:00 GMT</pubDate>
+  </item>
+</channel></rss>`;
+
+const ATOM = `<feed>
+  <entry>
+    <title>Rocket launch delayed by weather</title>
+    <link href="https://example.com/b"/>
+    <summary>Scrubbed for high winds.</summary>
+    <updated>2026-09-17T10:00:00Z</updated>
+  </entry>
+</feed>`;
+
+test('an RSS 2.0 item is parsed, link from the element body', () => {
+  const [item] = parseFeed(RSS2, { source: 'x' });
+  assert.equal(item.title, 'Rocket launch delayed by weather');
+  assert.equal(item.url, 'https://example.com/a');
+  assert.equal(item.summary, 'The launch slipped to Thursday.');
+  assert.equal(item.publishedAt.toISOString(), '2026-09-17T10:00:00.000Z');
+});
+
+test('an Atom entry is parsed, link from the href attribute', () => {
+  // RSS puts the url in the body and Atom in an attribute. Reading only one
+  // shape drops every item from half the feeds, on the url check.
+  const [item] = parseFeed(ATOM, { source: 'y' });
+  assert.equal(item.url, 'https://example.com/b');
+  assert.equal(item.publishedAt.toISOString(), '2026-09-17T10:00:00.000Z');
+});
+
+test('CDATA and entities are unwrapped', () => {
+  assert.equal(textOf('<![CDATA[Tom &amp; Jerry]]>'), 'Tom & Jerry');
+  assert.equal(decodeEntities('caf&#233;'), 'caf\u00e9');
+  assert.equal(decodeEntities('&#x2014;dash'), '\u2014dash');
+  assert.equal(textOf('<p>nested <b>markup</b></p>'), 'nested markup');
+});
+
+test('an item missing a title or a link is skipped, not half-stored', () => {
+  const xml = `<rss><item><title>No link here</title></item>
+               <item><link>https://example.com/c</link></item></rss>`;
+  assert.equal(parseFeed(xml).length, 0);
+});
+
+test('an unparseable date is null rather than the epoch or now', () => {
+  // Returning a Date here would make a junk item look fresh and let it
+  // through the recency filter.
+  assert.equal(dateOf('<item><pubDate>not a date</pubDate></item>'), null);
+  assert.equal(dateOf('<item></item>'), null);
+});
+
+test('namespaced date tags are read', () => {
+  assert.equal(dateOf('<item><dc:date>2026-09-17T10:00:00Z</dc:date></item>')?.toISOString(),
+    '2026-09-17T10:00:00.000Z');
+});
+
+test('malformed xml yields no items instead of throwing', () => {
+  assert.deepEqual(parseFeed('<rss><item><title>unclosed'), []);
+  assert.deepEqual(parseFeed(''), []);
+  assert.deepEqual(parseFeed(null), []);
+});
+
+// --- clustering: corroboration is the signal -----------------------------
+
+const at = (h) => new Date(Date.UTC(2026, 8, 17, h, 0, 0));
+
+test('the same event from different outlets forms one story', () => {
+  const items = [
+    { title: 'Rocket launch delayed by bad weather', url: 'a', source: 'bbc', publishedAt: at(9) },
+    { title: 'Bad weather delays rocket launch', url: 'b', source: 'npr', publishedAt: at(10) },
+    { title: 'Weather forces rocket launch delay', url: 'c', source: 'cbc', publishedAt: at(11) },
+  ];
+  const [story] = rankStories(clusterStories(items), { minSources: 2, now: at(12) });
+  assert.equal(story.sourceCount, 3);
+  assert.equal(story.urls.length, 3);
+});
+
+test('one outlet running a story five times is not corroboration', () => {
+  // Counting items rather than outlets would let a single prolific feed
+  // manufacture a top story every run.
+  const items = Array.from({ length: 5 }, (_, i) => ({
+    title: 'Rocket launch delayed by bad weather',
+    url: `u${i}`, source: 'bbc', publishedAt: at(9),
+  }));
+  assert.equal(rankStories(clusterStories(items), { minSources: 2, now: at(12) }).length, 0);
+});
+
+test('unrelated headlines stay separate', () => {
+  const items = [
+    { title: 'Rocket launch delayed by bad weather', url: 'a', source: 'bbc', publishedAt: at(9) },
+    { title: 'Central bank holds interest rates steady', url: 'b', source: 'npr', publishedAt: at(9) },
+  ];
+  assert.equal(clusterStories(items).length, 2);
+});
+
+test('the earliest report dates the story, not the latest rewrite', () => {
+  const items = [
+    { title: 'Central bank holds interest rates steady', url: 'a', source: 'bbc', publishedAt: at(14) },
+    { title: 'Interest rates held steady by central bank', url: 'b', source: 'npr', publishedAt: at(9) },
+  ];
+  const [story] = rankStories(clusterStories(items), { minSources: 2, now: at(15) });
+  assert.equal(story.ageHours, 6);
+});
+
+test('more corroborated outranks fresher', () => {
+  const items = [
+    { title: 'Rocket launch delayed by bad weather', url: 'a', source: 'bbc', publishedAt: at(1) },
+    { title: 'Bad weather delays rocket launch', url: 'b', source: 'npr', publishedAt: at(1) },
+    { title: 'Weather forces rocket launch delay', url: 'c', source: 'cbc', publishedAt: at(1) },
+    { title: 'Central bank holds interest rates steady', url: 'd', source: 'bbc', publishedAt: at(11) },
+    { title: 'Interest rates held steady by central bank', url: 'e', source: 'npr', publishedAt: at(11) },
+  ];
+  const ranked = rankStories(clusterStories(items), { minSources: 2, now: at(12) });
+  assert.match(ranked[0].title, /[Rr]ocket/);
+  assert.equal(ranked[0].sourceCount, 3);
+});
+
+test('word order and filler do not change a story id', () => {
+  // Feeds re-serve the same headline for days, so the id must not depend on
+  // ordering or stopwords. It is NOT stemmed - see storyId for why - so
+  // "delays" vs "delayed" is expected to differ, and findDuplicate catches
+  // that case by topic instead.
+  assert.equal(
+    storyId('Rocket launch delayed by bad weather'),
+    storyId('Bad weather: the rocket launch, delayed'),
+  );
+});
+
+test('different stories get different ids', () => {
+  assert.notEqual(
+    storyId('Rocket launch delayed by bad weather'),
+    storyId('Central bank holds interest rates steady'),
+  );
 });
