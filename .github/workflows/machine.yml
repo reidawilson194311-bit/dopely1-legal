@@ -56,6 +56,22 @@ on:
       show_status:
         description: 'Only rows with this status, e.g. needs-review'
         type: string
+      sweep:
+        description: 're-screen stored news against the current rules'
+        type: boolean
+        default: false
+      sweep_table:
+        description: 'sweep: winners | scripts'
+        default: 'winners'
+        type: string
+      sweep_status:
+        description: 'sweep: which status to re-screen'
+        default: ''
+        type: string
+      sweep_apply:
+        description: 'sweep: actually retire the failures (otherwise dry run)'
+        type: boolean
+        default: false
         required: false
       patch_id:
         description: 'Correct one field on one row: the row id (also sets stages=patch)'
@@ -142,6 +158,8 @@ jobs:
             echo "stages=patch" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.requeue }}" = "true" ]; then
             echo "stages=requeue" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.sweep }}" = "true" ]; then
+            echo "stages=sweep" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.show }}" = "true" ]; then
             echo "stages=show" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.doctor }}" = "true" ]; then
@@ -159,6 +177,7 @@ jobs:
           steps.plan.outputs.stages != 'probe-higgsfield' &&
           steps.plan.outputs.stages != 'seedance' &&
           steps.plan.outputs.stages != 'show' &&
+          steps.plan.outputs.stages != 'sweep' &&
           steps.plan.outputs.stages != 'requeue' &&
           steps.plan.outputs.stages != 'patch'
         run: npm test
@@ -171,6 +190,7 @@ jobs:
           steps.plan.outputs.stages != 'probe-higgsfield' &&
           steps.plan.outputs.stages != 'seedance' &&
           steps.plan.outputs.stages != 'show' &&
+          steps.plan.outputs.stages != 'sweep' &&
           steps.plan.outputs.stages != 'requeue' &&
           steps.plan.outputs.stages != 'patch'
         # Kept for `doctor` too: it reports on ffmpeg and the caption filter,
@@ -203,7 +223,8 @@ jobs:
           if [ "$DRY_RUN_INPUT" = "true" ] || [ "$STAGES" = "doctor" ] || \
              [ "$STAGES" = "setup-airtable" ] || [ "$STAGES" = "probe-submagic" ] || \
              [ "$STAGES" = "probe-higgsfield" ] || [ "$STAGES" = "seedance" ] || \
-             [ "$STAGES" = "show" ] || [ "$STAGES" = "requeue" ] || \
+             [ "$STAGES" = "show" ] || [ "$STAGES" = "sweep" ] || \
+             [ "$STAGES" = "requeue" ] || \
              [ "$STAGES" = "patch" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
@@ -363,6 +384,21 @@ jobs:
               sed 's/\x1b\[[0-9;]*m//g' /tmp/patch.txt
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.plan.outputs.stages }}" = "sweep" ]; then
+            # Re-screens what is already stored. Dry by default: it reports what
+            # it would retire and changes nothing until sweep_apply is ticked.
+            node src/cli.js sweep \
+              ${{ inputs.sweep_table && format('--table={0}', inputs.sweep_table) || '' }} \
+              ${{ inputs.sweep_status && format('--status={0}', inputs.sweep_status) || '' }} \
+              ${{ inputs.sweep_apply && '--apply' || '' }} \
+              | tee /tmp/sweep.txt
+            {
+              echo '## Swept'
+              echo
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' /tmp/sweep.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ steps.plan.outputs.stages }}" = "show" ]; then
             # Reads the store and prints it. No model calls, no spend.
             node src/cli.js show --limit=10 \
@@ -406,6 +442,7 @@ jobs:
           steps.plan.outputs.stages != 'probe-higgsfield' &&
           steps.plan.outputs.stages != 'seedance' &&
           steps.plan.outputs.stages != 'show' &&
+          steps.plan.outputs.stages != 'sweep' &&
           steps.plan.outputs.stages != 'requeue' &&
           steps.plan.outputs.stages != 'patch'
         uses: actions/upload-artifact@v4
