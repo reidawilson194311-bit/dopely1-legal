@@ -71,6 +71,14 @@ export async function generateImage(imagePrompt, outPath, { styleKey } = {}) {
     return { path: outPath, placeholder: true };
   }
 
+  // Another service can draw instead. Imported lazily so a machine configured
+  // for Gemini never loads it, and the style prompt is built the same way
+  // either way - art direction belongs to us, not to the generator.
+  if (config.design.imageProvider === 'higgsfield') {
+    const { generateImage: higgsfield } = await import('./images/higgsfield.js');
+    return higgsfield(buildPrompt(imagePrompt, styleKey), outPath);
+  }
+
   const apiKey = config.design.geminiApiKey;
   if (!apiKey) throw new Error('GEMINI_API_KEY is required to generate visuals (or use --dry-run)');
   const prompt = buildPrompt(imagePrompt, styleKey);
