@@ -25,26 +25,43 @@
  */
 const HARSH = [
   // firearms
-  'shot', 'shots', 'shoots', 'shooting', 'shootings', 'shooter', 'gunman',
+  'shot', 'shots', 'shoots', 'shooting', 'shootings', 'shooter', 'shooters',
+  'gunman',
   'gunmen', 'gunfire', 'gunshot', 'opened fire',
-  // killing
-  'killed', 'killing', 'kills', 'dead', 'deaths', 'death toll', 'fatal',
-  'fatally', 'murder', 'murdered', 'homicide', 'manslaughter', 'massacre',
-  'slain', 'execution', 'executed', 'beheaded', 'lynching',
+  // killing. The plurals and the present tense are listed explicitly and not
+  // by accident: the first live run let through "children's killings" and
+  // "man, 82, dies after beach fight", because the list held `killing` but not
+  // `killings`, and `dead` but not `dies`. A near-miss on a word list is a
+  // story published, so the variants are spelled out.
+  'kill', 'kills', 'killed', 'killing', 'killings', 'killer', 'killers',
+  'die', 'dies', 'died', 'dying', 'dead', 'death', 'deaths', 'death toll',
+  'fatal', 'fatally', 'fatality', 'fatalities', 'murder', 'murders',
+  'murdered', 'homicide', 'manslaughter', 'massacre', 'slain', 'slaying',
+  'slayings', 'execution', 'executed', 'beheaded', 'lynching', 'victim',
+  'victims', 'inquest', 'coroner',
   // bodily harm
-  'stabbed', 'stabbing', 'beaten', 'mutilated', 'dismembered', 'wounded',
-  'casualties', 'maimed',
+  'stab', 'stabbed', 'stabbing', 'stabbings', 'beaten', 'mutilated',
+  'dismembered', 'wounded', 'injuries', 'casualties', 'maimed', 'brutal',
+  'brutally', 'bloodshed',
   // war and terror acts against people
   'airstrike', 'airstrikes', 'bombing', 'suicide bomber', 'car bomb',
-  'hostage', 'hostages', 'kidnapped', 'abduction', 'torture', 'tortured',
+  'hostage', 'hostages', 'kidnap', 'kidnapped', 'kidnapping', 'abduction',
+  'trafficking', 'hate crime', 'torture', 'tortured',
   'atrocity', 'atrocities', 'war crime', 'war crimes', 'genocide',
   // abuse and self-harm
   'rape', 'raped', 'sexual assault', 'molested', 'abuse', 'abused',
   'suicide', 'self-harm', 'overdose',
 ];
 
+// Longest alternative first. A regex alternation returns whichever branch is
+// listed earliest, not the longest one, so an unsorted list reports `death`
+// for "death toll" - true, but the less useful of the two answers, and the
+// log line exists to be useful.
 const PATTERN = new RegExp(
-  `\\b(?:${HARSH.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`,
+  `\\b(?:${[...HARSH]
+    .sort((a, b) => b.length - a.length)
+    .map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|')})\\b`,
   'i',
 );
 
