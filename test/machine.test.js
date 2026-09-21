@@ -19,6 +19,8 @@ import { nextSlots, zonedTimeToUtc } from '../src/lib/schedule.js';
 import { placeholderPNG, buildPrompt } from '../src/lib/nanobanana.js';
 import { estimateDuration } from '../src/lib/tts.js';
 import { reportBatch } from '../src/lib/batch.js';
+import { harshMatch, isTooHarsh } from '../src/lib/newsfilter.js';
+import { interestScore } from '../src/lib/interest.js';
 import { rampedRate } from '../src/lib/ramp.js';
 import { toGeminiSchema, parseJSON, describeSchema, DeclinedError } from '../src/lib/writer/schema.js';
 import { TABLES, diffTable } from '../scripts/airtable-schema.js';
@@ -979,20 +981,28 @@ test('the earliest report dates the story, not the latest rewrite', () => {
     { title: 'Central bank holds interest rates steady', url: 'a', source: 'bbc', publishedAt: at(14) },
     { title: 'Interest rates held steady by central bank', url: 'b', source: 'npr', publishedAt: at(9) },
   ];
-  const [story] = rankStories(clusterStories(items), { minSources: 2, now: at(15) });
+  // minInterest:0 so this tests dating and nothing else - "interest rates"
+  // scores dull, and the interest gate would otherwise drop the fixture
+  // before the assertion could run.
+  const [story] = rankStories(clusterStories(items), { minSources: 2, minInterest: 0, now: at(15) });
   assert.equal(story.ageHours, 6);
 });
 
-test('more corroborated outranks fresher', () => {
+test('at equal interest, more corroborated outranks fresher', () => {
+  // Corroboration is now the TIEBREAK, not the ranking - so this has to pit
+  // two stories of equal interest against each other, or it would really be
+  // testing the interest score. Both are launches: one bright word each.
   const items = [
     { title: 'Rocket launch delayed by bad weather', url: 'a', source: 'bbc', publishedAt: at(1) },
     { title: 'Bad weather delays rocket launch', url: 'b', source: 'npr', publishedAt: at(1) },
     { title: 'Weather forces rocket launch delay', url: 'c', source: 'cbc', publishedAt: at(1) },
-    { title: 'Central bank holds interest rates steady', url: 'd', source: 'bbc', publishedAt: at(11) },
-    { title: 'Interest rates held steady by central bank', url: 'e', source: 'npr', publishedAt: at(11) },
+    { title: 'Satellite launch slips to next week', url: 'd', source: 'bbc', publishedAt: at(11) },
+    { title: 'Next week for slipped satellite launch', url: 'e', source: 'npr', publishedAt: at(11) },
   ];
   const ranked = rankStories(clusterStories(items), { minSources: 2, now: at(12) });
-  assert.match(ranked[0].title, /[Rr]ocket/);
+  assert.equal(ranked.length, 2, 'both stories clear both gates');
+  assert.equal(ranked[0].interest, ranked[1].interest, 'the fixture is a genuine tie on interest');
+  assert.match(ranked[0].title, /[Rr]ocket/, 'the better-corroborated one wins the tie');
   assert.equal(ranked[0].sourceCount, 3);
 });
 
@@ -1073,4 +1083,84 @@ test('diffTable reports missing fields, and leaves choices alone', () => {
   const d = diffTable(spec, live);
   assert.deepEqual(d.missing.map((f) => f.name), ['review'], 'the absent FIELD is the finding');
   assert.equal(d.missingChoices, undefined, 'choices are not diffed');
+});
+
+test('the news screen drops violence against people', () => {
+  // The story that prompted this: the desk handed the writer a shooting and
+  // the writer wrote it up, because a prose exclusion cannot decline an
+  // assignment. The refusal has to happen before the writer is asked.
+  assert.equal(harshMatch('ICE Agent Shoots Driver in Austin'), 'shoots');
+  assert.equal(harshMatch('Death toll rises after weekend quake'), 'death toll');
+  assert.ok(isTooHarsh('Man stabbed outside the stadium'));
+});
+
+test('the news screen does not fire on words that merely contain one', () => {
+  // Whole-word matching is the whole reason this is a regex and not indexOf.
+  // Without \b, "shot" eats every screenshot and moonshot on the wire and the
+  // desk goes quiet for a reason nobody can see.
+  for (const safe of [
+    'Screenshot tool ships on Linux',
+    'Deadline extended for tax filing',
+    'NASA moonshot slips to 2027',
+    'Canada and France expand trade ties',
+    'Deadlock broken in budget talks',
+  ]) {
+    assert.equal(harshMatch(safe), null, safe);
+  }
+});
+
+test('interest scores discovery above procedure', () => {
+  assert.ok(interestScore('Astronomers discover the oldest black hole yet').score > 0);
+  assert.ok(interestScore('Deadline extended for tax filing').score < 0);
+  // The exact failure the user named: a real story, correctly reported, that
+  // nobody would watch.
+  assert.ok(
+    interestScore('Ancient tomb unearthed, hidden chamber revealed').score >
+      interestScore('Canada and France sign bilateral trade deal').score,
+  );
+});
+
+test('interest matches whole words only', () => {
+  // Substring matching scored "billion" as the legislative sense of `bill`
+  // and "secretary" as `secret`, which put money stories in the wrong column.
+  assert.equal(interestScore('Over 100 billion in annual trade').dull.includes('bill'), false);
+  assert.equal(interestScore('Secretary announces reshuffle').bright.includes('secrets'), false);
+});
+
+const story = (title, sources, summary = '') =>
+  ({ tokens: new Set(), items: [{ title, url: 'u', summary, publishedAt: new Date() }],
+     sources: new Set(sources) });
+
+test('a primary source needs no corroboration', () => {
+  // The bug this fixes: every science feed breaks its own stories, so each
+  // scored one outlet and was dropped, while six world desks corroborated
+  // each other on procedural news and swept the batch.
+  const out = rankStories(
+    [story('NASA rover discovers strange ancient rock on Mars', ['nasa'])],
+    { minSources: 2, primarySources: ['nasa'], now: new Date() },
+  );
+  assert.equal(out.length, 1, 'NASA reporting NASA does not need a second outlet');
+});
+
+test('corroboration gates, interest ranks', () => {
+  const out = rankStories(
+    [
+      // Widely carried and dull - used to win on six outlets alone.
+      story('Tax filing deadline extended by parliament', ['bbc', 'npr', 'guardian', 'aljazeera']),
+      // Thinly carried and fascinating.
+      story('Ancient tomb unearthed with hidden chamber', ['phys-org', 'smithsonian']),
+    ],
+    { minSources: 2, now: new Date() },
+  );
+  assert.equal(out.length, 1, 'the procedural story fails the interest gate');
+  assert.match(out[0].title, /tomb/);
+});
+
+test('an uncorroborated non-primary story is still dropped', () => {
+  // Interest must not become a way around the truth gate.
+  const out = rankStories(
+    [story('Mysterious ancient artifact discovered', ['someblog'])],
+    { minSources: 2, primarySources: ['nasa'], now: new Date() },
+  );
+  assert.equal(out.length, 0);
 });

@@ -60,24 +60,46 @@ export const NICHE = {
   /**
    * Feeds for the news pillar.
    *
-   * Chosen to be INDEPENDENT of each other, because the scoring signal is how
-   * many separate outlets carried a story. Three feeds that syndicate the same
-   * wire copy would agree on everything and prove nothing.
+   * Chosen to be INDEPENDENT of each other, because corroboration is the test
+   * of whether a story is real. Three feeds that syndicate the same wire copy
+   * would agree on everything and prove nothing.
+   *
+   * Weighted towards discovery rather than world desks. The first cut was six
+   * world feeds to four science ones, and it produced exactly what that ratio
+   * predicts: of 207 items on the first live run, every surviving story was
+   * politics, because the six world desks corroborate EACH OTHER on procedural
+   * events while each science outlet breaks its own stories alone. More
+   * independent science feeds give discoveries someone to be corroborated BY.
+   *
+   * `primary: true` marks an outlet that IS the source rather than one
+   * reporting a source. A space agency announcing its own mission needs no
+   * second outlet to confirm what it said about itself.
    *
    * Read for headlines and summaries only - what happened, not how anyone
    * phrased it. Nothing from a feed is ever republished.
    */
   newsFeeds: [
-    { source: 'bbc',        url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
-    { source: 'npr',        url: 'https://feeds.npr.org/1001/rss.xml' },
-    { source: 'guardian',   url: 'https://www.theguardian.com/world/rss' },
-    { source: 'aljazeera',  url: 'https://www.aljazeera.com/xml/rss/all.xml' },
-    { source: 'cbc',        url: 'https://www.cbc.ca/webfeed/rss/rss-world' },
-    { source: 'skynews',    url: 'https://feeds.skynews.com/feeds/rss/world.xml' },
-    { source: 'nasa',       url: 'https://www.nasa.gov/rss/dyn/breaking_news.rss' },
-    { source: 'arstechnica',url: 'https://feeds.arstechnica.com/arstechnica/index' },
-    { source: 'newscientist', url: 'https://www.newscientist.com/feed/home/' },
-    { source: 'phys-org',   url: 'https://phys.org/rss-feed/' },
+    // Discovery, science and space - the material this channel is actually for.
+    { source: 'nasa',        url: 'https://www.nasa.gov/rss/dyn/breaking_news.rss', primary: true },
+    { source: 'esa',         url: 'https://www.esa.int/rssfeed/Our_Activities/Space_Science', primary: true },
+    { source: 'phys-org',    url: 'https://phys.org/rss-feed/' },
+    { source: 'sciencedaily',url: 'https://www.sciencedaily.com/rss/top/science.xml' },
+    { source: 'sciencenews', url: 'https://www.sciencenews.org/feed' },
+    { source: 'newscientist',url: 'https://www.newscientist.com/feed/home/' },
+    { source: 'livescience', url: 'https://www.livescience.com/feeds/all' },
+    { source: 'space-com',   url: 'https://www.space.com/feeds/all' },
+    { source: 'quanta',      url: 'https://api.quantamagazine.org/feed/' },
+    { source: 'smithsonian', url: 'https://www.smithsonianmag.com/rss/latest_articles/' },
+    { source: 'eurekalert',  url: 'https://www.eurekalert.org/rss/technology_engineering.xml' },
+    { source: 'arstechnica', url: 'https://feeds.arstechnica.com/arstechnica/index' },
+    { source: 'bbc-science', url: 'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml' },
+    { source: 'guardian-sci',url: 'https://www.theguardian.com/science/rss' },
+    // World desks, kept so a genuinely huge event is not missed. Outnumbered
+    // on purpose - they were the whole reason the first batch was procedural.
+    { source: 'bbc',         url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
+    { source: 'npr',         url: 'https://feeds.npr.org/1001/rss.xml' },
+    { source: 'guardian',    url: 'https://www.theguardian.com/world/rss' },
+    { source: 'aljazeera',   url: 'https://www.aljazeera.com/xml/rss/all.xml' },
   ],
 
   /**
@@ -120,6 +142,7 @@ export const NICHE = {
     'active political campaigns, elections or partisan talking points',
     'conspiracy claims presented as fact',
     'tragedy, gore, self-harm or anything requiring a content warning',
+    'violence done to a person - shootings, killings, assault - even when it is the news',
     'unverified statistics with no traceable source',
   ],
 };
