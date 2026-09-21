@@ -146,9 +146,13 @@ async function syncBase() {
         const additions = want.filter((n) => !haveNames.has(n)).map((name) => ({ name }));
         if (!additions.length) continue;
         if (!DRY) {
+          // `type` must be echoed back. A body of only `options` is read as a
+          // type change and rejected with "Changing a field's type ... is not
+          // currently supported", which is a confusing way to say "say what
+          // the type still is".
           await api(`/bases/${BASE}/tables/${table.id}/fields/${live.id}`, {
             method: 'PATCH',
-            body: { options: { choices: [...have, ...additions] } },
+            body: { type: live.type, options: { choices: [...have, ...additions] } },
           });
         }
         added += additions.length;
