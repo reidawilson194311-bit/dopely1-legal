@@ -99,6 +99,13 @@ const DULL = [
   'convicted', 'sentenced', 'jailed', 'prison', 'extradition', 'suspect',
   'protest', 'protests', 'rally', 'march', 'interview', 'anniversary',
   'tribute', 'memorial', 'funeral',
+  // Institutional housekeeping. A primary outlet's feed is the ORGANISATION's
+  // feed: NASA's carried an ethics notice and a Japan Festival appearance
+  // alongside its missions, and both reached the winners table.
+  'determination', 'determinations', 'gathering', 'gatherings', 'festival',
+  'ceremony', 'outreach', 'notice', 'advisory', 'solicitation', 'procurement',
+  'internship', 'workshop', 'webinar', 'exhibit', 'open house', 'apod',
+  'employee', 'staff', 'headquarters', 'administrator', 'names',
 ];
 
 // Longest alternative first, for the same reason as the harshness screen: an
