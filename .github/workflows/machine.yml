@@ -73,6 +73,10 @@ on:
         description: 'Build the Airtable base (safe to re-run; never deletes or retypes a field)'
         type: boolean
         default: false
+      seedance:
+        description: 'Generate one 5s Seedance 2.5 test video (BILLABLE - makes a real generation request)'
+        type: boolean
+        default: false
       probe_higgsfield:
         description: 'Ask the Higgsfield API which submit path exists, and follow one generation'
         type: boolean
@@ -122,6 +126,8 @@ jobs:
               '30 * * * *') echo "stages=drain" >> "$GITHUB_OUTPUT" ;;
               *)            echo "stages=write,design,post" >> "$GITHUB_OUTPUT" ;;
             esac
+          elif [ "${{ inputs.seedance }}" = "true" ]; then
+            echo "stages=seedance" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.probe_higgsfield }}" = "true" ]; then
             echo "stages=probe-higgsfield" >> "$GITHUB_OUTPUT"
           elif [ "${{ inputs.probe_submagic }}" = "true" ]; then
@@ -147,6 +153,7 @@ jobs:
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
           steps.plan.outputs.stages != 'probe-higgsfield' &&
+          steps.plan.outputs.stages != 'seedance' &&
           steps.plan.outputs.stages != 'show' &&
           steps.plan.outputs.stages != 'requeue' &&
           steps.plan.outputs.stages != 'patch'
@@ -158,6 +165,7 @@ jobs:
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
           steps.plan.outputs.stages != 'probe-higgsfield' &&
+          steps.plan.outputs.stages != 'seedance' &&
           steps.plan.outputs.stages != 'show' &&
           steps.plan.outputs.stages != 'requeue' &&
           steps.plan.outputs.stages != 'patch'
@@ -190,7 +198,7 @@ jobs:
         run: |
           if [ "$DRY_RUN_INPUT" = "true" ] || [ "$STAGES" = "doctor" ] || \
              [ "$STAGES" = "setup-airtable" ] || [ "$STAGES" = "probe-submagic" ] || \
-             [ "$STAGES" = "probe-higgsfield" ] || \
+             [ "$STAGES" = "probe-higgsfield" ] || [ "$STAGES" = "seedance" ] || \
              [ "$STAGES" = "show" ] || [ "$STAGES" = "requeue" ] || \
              [ "$STAGES" = "patch" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"; exit 0
@@ -263,6 +271,7 @@ jobs:
           HIGGSFIELD_KEY_ID: ${{ secrets.HIGGSFIELD_KEY_ID }}
           HIGGSFIELD_KEY_SECRET: ${{ secrets.HIGGSFIELD_KEY_SECRET }}
           HIGGSFIELD_IMAGE_MODEL: ${{ vars.HIGGSFIELD_IMAGE_MODEL }}
+          HF_CREDENTIALS: ${{ secrets.HF_CREDENTIALS }}
           PUBLISH_PROVIDER: ${{ vars.PUBLISH_PROVIDER }}
           METRICOOL_USER_TOKEN: ${{ secrets.METRICOOL_USER_TOKEN }}
           METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}
@@ -274,7 +283,18 @@ jobs:
           UNIPILE_ACCOUNT_YOUTUBE: ${{ secrets.UNIPILE_ACCOUNT_YOUTUBE }}
           PUBLISH_TIMEZONE: ${{ vars.PUBLISH_TIMEZONE || 'America/New_York' }}
         run: |
-          if [ "${{ steps.plan.outputs.stages }}" = "probe-higgsfield" ]; then
+          if [ "${{ steps.plan.outputs.stages }}" = "seedance" ]; then
+            # index.ts reads HF_CREDENTIALS from the environment, so no
+            # .env.local is needed here - the secret never touches the disk.
+            node index.ts | tee /tmp/seedance.txt || true
+            {
+              echo '## Seedance 2.5 test generation'
+              echo
+              echo '```'
+              sed 's/\x1b\[[0-9;]*m//g' /tmp/seedance.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ steps.plan.outputs.stages }}" = "probe-higgsfield" ]; then
             node scripts/probe-higgsfield.js | tee /tmp/hf.txt || true
             {
               echo '## Higgsfield API probe'
@@ -373,6 +393,7 @@ jobs:
           steps.plan.outputs.stages != 'setup-airtable' &&
           steps.plan.outputs.stages != 'probe-submagic' &&
           steps.plan.outputs.stages != 'probe-higgsfield' &&
+          steps.plan.outputs.stages != 'seedance' &&
           steps.plan.outputs.stages != 'show' &&
           steps.plan.outputs.stages != 'requeue' &&
           steps.plan.outputs.stages != 'patch'
