@@ -4,8 +4,12 @@
   "private": true,
   "type": "module",
   "description": "Autonomous short-form content machine: scrape -> reword -> design -> post. Instagram Reels, TikTok, YouTube Shorts.",
-  "engines": { "node": ">=20" },
-  "bin": { "machine": "./src/cli.js" },
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "machine": "./src/cli.js"
+  },
   "scripts": {
     "machine": "node src/cli.js run",
     "research": "node src/cli.js research",
@@ -17,6 +21,10 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.0"
+    "@anthropic-ai/sdk": "^0.71.0",
+    "@higgsfield/client": "^0.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2"
   }
 }
