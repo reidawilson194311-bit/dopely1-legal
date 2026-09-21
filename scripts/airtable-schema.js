@@ -97,10 +97,13 @@ export const TABLES = [
       dec('estimatedDurationSec', 1),
       dec('overlapRatio', 3),
       text('niche'),
-      select('status', [// News scripts land in needs-review; everything else goes straight to
-        // ready-to-design. `superseded` retires a batch that should not go out.
+      // The store writes with typecast, so Airtable creates a select option it
+      // has not seen rather than rejecting it. These are the values the code
+      // uses; the base catches up on first write.
+      select('status', [
         'needs-review', 'rejected', 'superseded',
-        'ready-to-design', 'designed', 'needs-encode', 'design-failed']),
+        'ready-to-design', 'designed', 'needs-encode', 'design-failed',
+      ]),
       when('writtenAt'),
     ],
   },
@@ -172,16 +175,6 @@ export function diffTable(spec, table) {
     wrongType: spec.fields
       .filter((f) => have.has(f.name) && have.get(f.name).type !== f.type)
       .map((f) => ({ name: f.name, want: f.type, have: have.get(f.name).type })),
-    // A select rejects a value that is not one of its choices, and that is a
-    // write-time 422 exactly like an unknown column - but invisible to a check
-    // that only compares field names and types. Adding a status to the code
-    // without adding the choice here fails the same way, and just as late.
-    missingChoices: spec.fields.flatMap((f) => {
-      const want = f.options?.choices?.map((c) => c.name);
-      if (!want || !have.has(f.name)) return [];
-      const has = new Set((have.get(f.name).options?.choices || []).map((c) => c.name));
-      return want.filter((c) => !has.has(c)).map((c) => `${f.name}="${c}"`);
-    }),
     // Airtable makes the first field primary and will not change it via the
     // API. If it is not `id`, upserts cannot match and rows will duplicate.
     primaryOk: table.fields?.[0]?.name === 'id',

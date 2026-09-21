@@ -1049,16 +1049,19 @@ test('a script echoing the report is caught, headline and summary alike', () => 
   );
 });
 
-// --- schema drift: a select choice fails exactly like a missing column ---
+// --- typecast: the store creates select options it has not seen ----------
 
-test('a missing select choice is reported, not just a missing field', () => {
-  // Adding a status to the code without adding the choice is a write-time
-  // 422, identical to an unknown column and invisible to a name/type check.
+test('diffTable reports missing fields, and leaves choices alone', () => {
+  // The Airtable store writes with typecast:true, so a select value it has
+  // not seen is CREATED rather than rejected. An earlier version of this
+  // checked choices too and blocked every run over options Airtable would
+  // have made itself - and Airtable will not add them by API anyway.
   const spec = {
     name: 'Scripts',
     fields: [
       { name: 'id', type: 'singleLineText' },
       { name: 'status', type: 'singleSelect', options: { choices: [{ name: 'a' }, { name: 'b' }] } },
+      { name: 'review', type: 'singleLineText' },
     ],
   };
   const live = {
@@ -1068,21 +1071,6 @@ test('a missing select choice is reported, not just a missing field', () => {
     ],
   };
   const d = diffTable(spec, live);
-  assert.deepEqual(d.missing, [], 'the field itself is present');
-  assert.deepEqual(d.missingChoices, ['status="b"']);
-});
-
-test('a select whose choices all exist reports nothing', () => {
-  const spec = {
-    name: 'T',
-    fields: [{ name: 'status', type: 'singleSelect', options: { choices: [{ name: 'a' }] } }],
-  };
-  const live = { fields: [{ name: 'status', type: 'singleSelect', options: { choices: [{ name: 'a', id: 'x' }] } }] };
-  assert.deepEqual(diffTable(spec, live).missingChoices, []);
-});
-
-test('a non-select field never reports choices', () => {
-  const spec = { name: 'T', fields: [{ name: 'title', type: 'singleLineText' }] };
-  const live = { fields: [{ name: 'title', type: 'singleLineText' }] };
-  assert.deepEqual(diffTable(spec, live).missingChoices, []);
+  assert.deepEqual(d.missing.map((f) => f.name), ['review'], 'the absent FIELD is the finding');
+  assert.equal(d.missingChoices, undefined, 'choices are not diffed');
 });
