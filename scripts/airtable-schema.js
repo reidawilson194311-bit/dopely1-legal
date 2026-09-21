@@ -36,6 +36,9 @@ const select = (name, choices) => ({
 });
 
 const PLATFORMS = ['instagram', 'tiktok', 'youtube'];
+// Winners can also come from the news desk, which is a source rather than a
+// platform we publish to - so it belongs here and NOT in the posts table.
+const WINNER_SOURCES = [...PLATFORMS, 'news'];
 const PILLARS = NICHE.pillars.map((p) => p.id);
 
 export const TABLES = [
@@ -44,7 +47,7 @@ export const TABLES = [
     description: 'Skill 01. Posts that beat their own account\'s median. Sort by viralScore.',
     fields: [
       text('id'),
-      select('platform', PLATFORMS),
+      select('platform', WINNER_SOURCES),
       text('account'),
       url('accountUrl'),
       url('url'),
@@ -62,6 +65,10 @@ export const TABLES = [
       dec('viralMultiple'),
       dec('engagementRate', 4),
       dec('viralScore', 3),
+      // Skill 01b. How many distinct outlets carried the story, and how old it
+      // was when we read it.
+      text('sourceOutlets'),
+      int('ageHours'),
       text('niche'),
       select('status', [
         'winner', 'used', 'rejected-overlap', 'rejected-duplicate', 'rejected-declined',

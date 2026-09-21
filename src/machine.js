@@ -21,6 +21,7 @@ import { config } from './config.js';
 import { logger } from './lib/log.js';
 import research from './skills/01-researcher.js';
 import researchNews from './skills/01b-news.js';
+import { assertSchema } from './lib/store/assertSchema.js';
 import write from './skills/02-copywriter.js';
 import design from './skills/03-designer.js';
 import post from './skills/04-poster.js';
@@ -47,6 +48,9 @@ export async function run({ stages = Object.keys(STAGES), ...opts } = {}) {
   const failures = [];
 
   log.info(`the machine is running: ${stages.map((s) => STAGES[s].label).join(' -> ')}`);
+
+  // Before anything is generated or paid for.
+  if (process.env.FAIL_ON_SCHEMA_DRIFT === '1') await assertSchema({ fatal: true });
   if (config.dryRun) log.warn('DRY RUN - no external calls, no money spent, nothing goes live');
 
   for (const name of stages) {

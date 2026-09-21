@@ -244,6 +244,12 @@ jobs:
           AIRTABLE_API_KEY: ${{ secrets.AIRTABLE_API_KEY }}
           AIRTABLE_BASE_ID: ${{ secrets.AIRTABLE_BASE_ID }}
           SUBMAGIC_API_KEY: ${{ secrets.SUBMAGIC_API_KEY }}
+          # Checked before the run, not after. Three separate batches have been
+          # destroyed by a field the code writes and the base does not have:
+          # Airtable rejects the WHOLE row for one unknown column, so the
+          # failure lands after the images, the narration and the video have
+          # all been paid for. The check costs one request.
+          FAIL_ON_SCHEMA_DRIFT: '1'
           SUBMAGIC_LANGUAGE: ${{ vars.SUBMAGIC_LANGUAGE }}
           SUBMAGIC_TIKTOK_PRIVACY: ${{ vars.SUBMAGIC_TIKTOK_PRIVACY }}
           # Hosting the rendered video so Submagic can fetch it by URL.
