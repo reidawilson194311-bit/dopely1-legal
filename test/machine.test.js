@@ -1219,3 +1219,27 @@ test('institutional housekeeping scores dull', () => {
   assert.ok(interestScore('Widely Attended Gatherings (WAGs) Determinations').score < 0);
   assert.ok(interestScore('Space Center Sparks Curiosity at Annual Japan Festival').score < 0);
 });
+
+test('the sweep screens stored rows, and only the news ones', () => {
+  // The screens run at ingest, so anything taken before a screen existed sits
+  // in the table untouched - and the writer reads the table, not the wire. A
+  // drone strike with casualties reached a finished script that way, hours
+  // after the violence screen went in.
+  const stored = [
+    { id: 'news_drone', platform: 'news', hook: 'Over 1,000 drones target Russia',
+      caption: 'Officials confirmed two fatalities and 20 wounded.' },
+    { id: 'news_juice', platform: 'news', hook: 'Juice to fly past Earth for gravity assist',
+      caption: 'The probe uses Earth gravity to reach Jupiter.' },
+    { id: 'ig_eve', platform: 'instagram', hook: 'Why cats knead',
+      caption: 'a dead simple explanation' },
+  ];
+  const screen = (r) => harshMatch(`${r.hook} ${r.caption}`);
+  const news = stored.filter((r) => r.platform === 'news' || r.pillar === 'news');
+
+  assert.equal(news.length, 2, 'the evergreen winner is out of scope');
+  assert.equal(screen(news[0]), 'fatalities', 'the casualty count is in the summary, not the headline');
+  assert.equal(screen(news[1]), null);
+  // The scoping is the point, not a detail: "a DEAD simple explanation" would
+  // retire a perfectly good evergreen post if the sweep screened everything.
+  assert.equal(harshMatch(stored[2].caption), 'dead');
+});

@@ -9,7 +9,11 @@
  *   machine design              03 only
  *   machine post                04 only
  *   machine status              what is sitting in each table
- *   machine show                print the latest scripts in full, for review\n *   machine requeue             put rows back a stage so it can run again\n *   machine patch               correct one field on one row after review\n *   machine doctor              check credentials and tooling before a real run
+ *   machine show                print the latest scripts in full, for review
+ *   machine sweep               re-screen stored news against the current rules
+ *   machine requeue             put rows back a stage so it can run again
+ *   machine patch               correct one field on one row after review
+ *   machine doctor              check credentials and tooling before a real run
  *
  * Flags: --dry-run  --limit=N  --platforms=a,b  --stages=a,b  --verbose
  */
@@ -17,6 +21,8 @@ import { config, applyCliOverrides } from './config.js';
 import { run, STAGES } from './machine.js';
 import { drain } from './skills/04-poster.js';
 import { getStore, TABLES } from './lib/store/index.js';
+import { harshMatch } from './lib/newsfilter.js';
+import { interestScore } from './lib/interest.js';
 import { hasFfmpeg, hasDrawtext, findFont } from './lib/video.js';
 import { ping as ttsPing } from './lib/tts.js';
 import { request } from './lib/http.js';
@@ -144,6 +150,63 @@ async function requeue({ table = 'scripts', from = 'designed', to = 'ready-to-de
   }
   console.log(`\n  ${rows.length} row(s) requeued\n`);
   return rows.length;
+}
+
+/**
+ * Re-screen what is already stored.
+ *
+ * Both news screens run at INGEST. That leaves everything taken before a screen
+ * existed, or before a gap in one was closed, sitting in the table at status
+ * "winner" - and the writer reads the table, not the wire. A drone strike with
+ * casualties reached a finished script that way, hours after the violence
+ * screen went in, because the screen was never asked about rows already there.
+ *
+ * Fixing the six rows by hand was the wrong shape of fix: the next gap closed
+ * leaves a different set behind. This asks the current screens about every
+ * stored row, so tightening a word list cleans up after itself.
+ *
+ * News only. An evergreen winner is a social post that performed well and was
+ * never subject to these screens.
+ */
+async function sweep({ table = 'winners', status = 'winner', to = 'rejected-filtered', apply = false } = {}) {
+  const store = getStore();
+  const scripts = table === 'scripts';
+  const rows = await store.list(table, { where: (r) => r.status === status });
+  // A winner marks its origin with `platform`, a script with `pillar`. Testing
+  // only one of them silently swept nothing on the scripts table, which is the
+  // half of the job that matters after a batch is already written.
+  const news = rows.filter((r) => r.platform === 'news' || r.pillar === 'news');
+
+  const failures = [];
+  for (const r of news) {
+    // A script carries its text in hook/beats; a winner in hook/caption. Both
+    // are screened over everything they hold, because the summary is where the
+    // casualty count lives even when the headline reads clean.
+    const beats = typeof r.beats === 'string' ? safeParse(r.beats) : r.beats;
+    const beatText = Array.isArray(beats)
+      ? beats.map((b) => `${b.onScreenText || ''} ${b.voiceover || ''}`).join(' ')
+      : '';
+    const text = `${r.title || ''} ${r.hook || ''} ${r.caption || ''} ${beatText} ${r.sourceNote || ''}`;
+    const harsh = harshMatch(text);
+    const interest = interestScore(text);
+    if (harsh) failures.push({ r, why: `too harsh: ${harsh}` });
+    else if (!scripts && interest.score < 1) {
+      failures.push({ r, why: `not interesting: ${interest.score}` });
+    }
+  }
+
+  if (!failures.length) {
+    console.log(`\n  ${news.length} news row(s) in ${table}/${status}, all pass\n`);
+    return 0;
+  }
+  for (const { r, why } of failures) {
+    if (apply) await store.patch(table, r.id, { status: to });
+    console.log(`  ${apply ? '' : '[dry] '}${(r.title || r.hook || r.id).slice(0, 62)}  <- ${why}`);
+  }
+  console.log(
+    `\n  ${failures.length} of ${news.length} retired${apply ? '' : ' (dry run - pass --apply)'}\n`,
+  );
+  return failures.length;
 }
 
 /**
@@ -365,6 +428,7 @@ dopely1-shorts-machine - scrape, reword, design, post. 0 humans.
   machine drain     publish held posts whose slot is due (Unipile only)
   machine status
   machine show [--limit=N] [--table=scripts|winners|renders|posts] [--status=S]
+  machine sweep [--table=winners|scripts] [--status=S] [--apply]   re-screen stored news
   machine requeue [--table=T] [--from=STATUS] [--to=STATUS] [--limit=N]
   machine patch --id=ID --field=PATH --value=TEXT [--table=T]
   machine doctor
@@ -399,6 +463,15 @@ async function main() {
       id: flags.id,
       field: flags.field,
       value: flags.value,
+    });
+    return 0;
+  }
+  if (command === 'sweep') {
+    await sweep({
+      table: flags.table || 'winners',
+      status: flags.status || 'winner',
+      to: flags.to || 'rejected-filtered',
+      apply: Boolean(flags.apply),
     });
     return 0;
   }
