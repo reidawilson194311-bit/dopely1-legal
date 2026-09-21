@@ -83,6 +83,19 @@ export const config = {
     keepTop: num('RESEARCH_KEEP_TOP', 40),
   },
 
+  /** Skill 01b: the news researcher. */
+  news: {
+    /** Only stories that broke inside this window are eligible. */
+    lookbackHours: num('NEWS_LOOKBACK_HOURS', 36),
+    /**
+     * Distinct outlets that must carry a story before it counts as notable.
+     * Two is the floor at which corroboration means anything at all.
+     */
+    minSources: num('NEWS_MIN_SOURCES', 2),
+    /** Stories kept per run, most corroborated first. */
+    keepTop: num('NEWS_KEEP_TOP', 12),
+  },
+
   // ---- Skill 02: the copywriter -------------------------------------------
   copy: {
     /**
