@@ -1,13 +1,17 @@
 import { contentTokens, similarity } from './similarity.js';
+import { interestScore } from './interest.js';
 
 /**
  * Group headlines that describe the same event.
  *
- * News has no view count, so "notable" has to be measured some other way. The
- * signal used here is CORROBORATION: a story four independent outlets ran is
- * notable; one only a single outlet ran is not. That is the same shape as the
- * per-account median test in skill 01 - judge an item against its peers rather
- * than against an absolute threshold.
+ * News has no view count, so "notable" has to be measured some other way.
+ * CORROBORATION is the measure of whether a story is REAL: one four
+ * independent outlets ran happened; one a single outlet ran might not have.
+ * That is the same shape as the per-account median test in skill 01 - judge an
+ * item against its peers rather than against an absolute threshold.
+ *
+ * It is not a measure of whether the story is worth watching. See rankStories
+ * below, where that is scored separately.
  *
  * Reuses the topic similarity written for script de-duplication, because it is
  * the same question: are these two texts about the same thing, ignoring how
@@ -49,8 +53,27 @@ export function clusterStories(items, threshold = SAME_STORY) {
  * `sourceCount` counts distinct OUTLETS, not items: one outlet running five
  * follow-ups on its own story is not corroboration, and counting items would
  * let a single prolific feed dominate every batch.
+ *
+ * Corroboration GATES, interest RANKS. They used to be the same number, and
+ * the result was a batch of tax deadlines: the story six world desks all cover
+ * is by construction the procedural one, while a discovery reported by the
+ * field that made it scores one and was discarded. Whether a story is true and
+ * whether anyone wants to watch it are close to opposite questions, so they
+ * are now asked separately.
+ *
+ * `primarySources` are outlets that ARE the source rather than reporting one -
+ * a space agency announcing its own mission. Asking a second outlet to confirm
+ * what NASA said about NASA adds nothing, and the requirement silently deleted
+ * every exciting story the science feeds broke.
  */
-export function rankStories(clusters, { minSources = 2, keepTop = 12, now = new Date() } = {}) {
+export function rankStories(clusters, {
+  minSources = 2,
+  keepTop = 12,
+  minInterest = 1,
+  primarySources = [],
+  now = new Date(),
+} = {}) {
+  const primary = new Set(primarySources);
   return clusters
     .map((c) => {
       // The earliest report is when it broke; the longest headline usually
@@ -60,10 +83,15 @@ export function rankStories(clusters, { minSources = 2, keepTop = 12, now = new 
         ? new Date(Math.min(...dated.map((i) => i.publishedAt.getTime())))
         : null;
       const lead = c.items.slice().sort((a, b) => b.title.length - a.title.length)[0];
+      const interest = interestScore(`${lead.title} ${lead.summary || ''}`);
       return {
         title: lead.title,
         url: lead.url,
         summary: lead.summary,
+        interest: interest.score,
+        bright: interest.bright,
+        dull: interest.dull,
+        fromPrimary: [...c.sources].some((src) => primary.has(src)),
         sourceCount: c.sources.size,
         sources: [...c.sources],
         urls: c.items.map((i) => i.url),
@@ -71,10 +99,20 @@ export function rankStories(clusters, { minSources = 2, keepTop = 12, now = new 
         ageHours: brokeAt ? Math.round((now.getTime() - brokeAt.getTime()) / 36e5) : null,
       };
     })
-    .filter((s) => s.sourceCount >= minSources)
-    // Most corroborated first; freshest breaks the tie, so a big story from
-    // this morning outranks an equally covered one from yesterday.
-    .sort((a, b) => b.sourceCount - a.sourceCount || (a.ageHours ?? 1e9) - (b.ageHours ?? 1e9))
+    // The truth gate: corroborated by enough outlets, OR broken by an outlet
+    // that is itself the primary source.
+    .filter((s) => s.sourceCount >= minSources || s.fromPrimary)
+    // The interest gate. A story with no signal of discovery at all is not
+    // worth a video, and an empty news day is a better outcome than a video
+    // about a filing deadline - the other pillars keep the schedule fed.
+    .filter((s) => s.interest >= minInterest)
+    // Most interesting first. Corroboration breaks the tie, then freshness, so
+    // between two equally interesting stories the better-attested and more
+    // recent one wins.
+    .sort((a, b) =>
+      b.interest - a.interest ||
+      b.sourceCount - a.sourceCount ||
+      (a.ageHours ?? 1e9) - (b.ageHours ?? 1e9))
     .slice(0, keepTop);
 }
 

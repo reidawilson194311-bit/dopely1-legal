@@ -103,7 +103,13 @@ export const config = {
      * Two is the floor at which corroboration means anything at all.
      */
     minSources: num('NEWS_MIN_SOURCES', 2),
-    /** Stories kept per run, most corroborated first. */
+    /**
+     * Minimum interest score a story needs before it is worth a video.
+     * Raise it for a pickier desk; 0 admits anything that is not actively
+     * procedural. See src/lib/interest.js for what is being counted.
+     */
+    minInterest: num('NEWS_MIN_INTEREST', 1),
+    /** Stories kept per run, most interesting first. */
     keepTop: num('NEWS_KEEP_TOP', 12),
   },
 

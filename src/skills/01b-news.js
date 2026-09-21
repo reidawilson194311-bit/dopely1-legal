@@ -104,12 +104,15 @@ export async function researchNews({ feeds = NICHE.newsFeeds, now = new Date() }
   const clusters = clusterStories(safe);
   const stories = rankStories(clusters, {
     minSources: config.news.minSources,
+    minInterest: config.news.minInterest,
+    primarySources: feeds.filter((f) => f.primary).map((f) => f.source),
     keepTop: config.news.keepTop,
     now,
   });
   log.info(
-    `${clusters.length} distinct stories -> ${stories.length} carried by ` +
-      `${config.news.minSources}+ outlets`,
+    `${clusters.length} distinct stories -> ${stories.length} attested and ` +
+      `interesting (${config.news.minSources}+ outlets or primary, ` +
+      `interest >= ${config.news.minInterest})`,
   );
   if (!stories.length) return [];
 
@@ -158,8 +161,20 @@ export async function researchNews({ feeds = NICHE.newsFeeds, now = new Date() }
   if (rows.length) await store.upsert(TABLES.WINNERS, rows);
   log.info(`saved to ${store.driver}: ${fresh.length} new, ${rows.length - fresh.length} refreshed`);
 
-  for (const r of rows.slice(0, 5)) {
-    log.debug(`  ${String(r.views).padStart(2)} outlets  ${String(r.ageHours).padStart(3)}h  ${r.hook.slice(0, 70)}`);
+  // Print the score and what earned it. A ranking nobody can explain is a
+  // ranking nobody can correct - if the batch comes back dull, this line says
+  // which word list needs the edit.
+  //
+  // Read off the ranked stories, NOT off the rows: the score is deliberately
+  // not a stored column. Airtable rejects the whole write for one unknown
+  // field, and this project has paid that toll three times already. A number
+  // used to sort one batch and then never read again does not earn a schema
+  // migration.
+  for (const s of coverable.slice(0, 5)) {
+    log.debug(
+      `  +${String(s.interest).padStart(2)}  ${String(s.sourceCount).padStart(2)} outlets  ` +
+        `${String(s.ageHours).padStart(3)}h  ${s.title.slice(0, 56)}  [${s.bright.slice(0, 4).join(' ')}]`,
+    );
   }
   return rows;
 }
