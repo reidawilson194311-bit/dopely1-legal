@@ -19,6 +19,7 @@ import { getStore, TABLES } from '../lib/store/index.js';
 import { fetchFeed } from '../lib/rss.js';
 import { clusterStories, rankStories } from '../lib/cluster.js';
 import { findDuplicate, contentTokens } from '../lib/similarity.js';
+import { harshMatch } from '../lib/newsfilter.js';
 import { reportBatch } from '../lib/batch.js';
 import { newId } from '../lib/id.js';
 
@@ -86,7 +87,21 @@ export async function researchNews({ feeds = NICHE.newsFeeds, now = new Date() }
   const recent = all.filter((i) => i.publishedAt && i.publishedAt.getTime() >= cutoff);
   log.info(`${all.length} items -> ${recent.length} inside ${config.news.lookbackHours}h`);
 
-  const clusters = clusterStories(recent);
+  // Drop violence before clustering, not after. A harsh item left in the pool
+  // still pulls its cluster's title and still occupies one of the keepTop
+  // slots that a coverable story would have had.
+  const dropped = [];
+  const safe = recent.filter((i) => {
+    const hit = harshMatch(`${i.title} ${i.summary || ''}`);
+    if (hit) dropped.push({ title: i.title, hit });
+    return !hit;
+  });
+  if (dropped.length) {
+    log.info(`${dropped.length} item(s) dropped as too harsh to cover`);
+    for (const d of dropped.slice(0, 5)) log.debug(`  [${d.hit}] ${d.title.slice(0, 66)}`);
+  }
+
+  const clusters = clusterStories(safe);
   const stories = rankStories(clusters, {
     minSources: config.news.minSources,
     keepTop: config.news.keepTop,
@@ -98,13 +113,22 @@ export async function researchNews({ feeds = NICHE.newsFeeds, now = new Date() }
   );
   if (!stories.length) return [];
 
+  // Screened again on the merged story, because a cluster's summary is built
+  // from several outlets and can carry wording that no single kept item had.
+  const coverable = stories.filter((s2) => {
+    const hit = harshMatch(`${s2.title} ${s2.summary || ''}`);
+    if (hit) log.debug(`  dropped on merge [${hit}] ${s2.title.slice(0, 60)}`);
+    return !hit;
+  });
+  if (!coverable.length) return [];
+
   // Do not cover the same event twice. Compared against what we have already
   // taken, by topic rather than by headline, since outlets reword freely.
   const existing = await store.list(TABLES.WINNERS);
   const seen = existing.map((w) => ({ text: w.hook || '', tokens: contentTokens(w.hook || '') }));
 
   const rows = [];
-  for (const s of stories) {
+  for (const s of coverable) {
     const dupe = findDuplicate(s.title, seen);
     if (dupe) {
       log.debug(`  already covered: "${s.title.slice(0, 60)}"`);

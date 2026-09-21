@@ -19,6 +19,7 @@ import { nextSlots, zonedTimeToUtc } from '../src/lib/schedule.js';
 import { placeholderPNG, buildPrompt } from '../src/lib/nanobanana.js';
 import { estimateDuration } from '../src/lib/tts.js';
 import { reportBatch } from '../src/lib/batch.js';
+import { harshMatch, isTooHarsh } from '../src/lib/newsfilter.js';
 import { rampedRate } from '../src/lib/ramp.js';
 import { toGeminiSchema, parseJSON, describeSchema, DeclinedError } from '../src/lib/writer/schema.js';
 import { TABLES, diffTable } from '../scripts/airtable-schema.js';
@@ -1073,4 +1074,28 @@ test('diffTable reports missing fields, and leaves choices alone', () => {
   const d = diffTable(spec, live);
   assert.deepEqual(d.missing.map((f) => f.name), ['review'], 'the absent FIELD is the finding');
   assert.equal(d.missingChoices, undefined, 'choices are not diffed');
+});
+
+test('the news screen drops violence against people', () => {
+  // The story that prompted this: the desk handed the writer a shooting and
+  // the writer wrote it up, because a prose exclusion cannot decline an
+  // assignment. The refusal has to happen before the writer is asked.
+  assert.equal(harshMatch('ICE Agent Shoots Driver in Austin'), 'shoots');
+  assert.equal(harshMatch('Death toll rises after weekend quake'), 'death toll');
+  assert.ok(isTooHarsh('Man stabbed outside the stadium'));
+});
+
+test('the news screen does not fire on words that merely contain one', () => {
+  // Whole-word matching is the whole reason this is a regex and not indexOf.
+  // Without \b, "shot" eats every screenshot and moonshot on the wire and the
+  // desk goes quiet for a reason nobody can see.
+  for (const safe of [
+    'Screenshot tool ships on Linux',
+    'Deadline extended for tax filing',
+    'NASA moonshot slips to 2027',
+    'Canada and France expand trade ties',
+    'Deadlock broken in budget talks',
+  ]) {
+    assert.equal(harshMatch(safe), null, safe);
+  }
 });

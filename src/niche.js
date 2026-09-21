@@ -120,6 +120,7 @@ export const NICHE = {
     'active political campaigns, elections or partisan talking points',
     'conspiracy claims presented as fact',
     'tragedy, gore, self-harm or anything requiring a content warning',
+    'violence done to a person - shootings, killings, assault - even when it is the news',
     'unverified statistics with no traceable source',
   ],
 };
