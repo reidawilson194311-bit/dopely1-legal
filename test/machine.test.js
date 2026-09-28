@@ -1310,3 +1310,62 @@ test('account refusal is read from the body as well as the status', () => {
   assert.equal(isAccountBlocked({ status: 400, message: '400 Bad Request - INVALID_VIDEO' }), false);
   assert.equal(isAccountBlocked(null), false);
 });
+
+// --- never publish the same video twice (the recovery that nearly reposted) --
+
+const scheduledOk = () => ({ externalId: 'sm-1', scheduledFor: new Date(Date.now() + 864e5).toISOString() });
+
+test('a render already live on the platform is retired, not reposted', async () => {
+  // Requeuing a stranded week brought back a second copy of the Shazam video,
+  // which had gone out on 09-21. Nothing checked, so a top-up would have
+  // reposted it.
+  const store = tempStore();
+  await store.upsert('posts', [{
+    id: 'p-old', platform: 'youtube', status: 'scheduled', scriptId: 'scr_a',
+    title: 'How Shazam Recognizes Any Song Instantly', publishAt: '2026-09-21T15:00:00Z',
+  }]);
+  await store.upsert('renders', [
+    readyRender('r1', { scriptId: 'scr_b', title: 'How Shazam Recognizes Any Song Instantly' }),
+    readyRender('r2', { scriptId: 'scr_c', title: 'Why Sharks Bite Undersea Internet Cables' }),
+  ]);
+  const provider = batchedProvider(scheduledOk);
+
+  await post({ store, provider, platforms: ['youtube'], limit: 3 });
+
+  assert.deepEqual(provider.calls.map((c) => c.title), ['Why Sharks Bite Undersea Internet Cables'],
+    'only the video the audience has not seen goes out');
+  assert.equal((await store.get('renders', 'r1')).status, 'duplicate', 'caught by title across scripts');
+  assert.equal((await store.get('renders', 'r2')).status, 'posted');
+});
+
+test('two unposted copies in one run: one goes, the other waits', async () => {
+  // The second is held back, not retired - if the first fails on its own
+  // merits, the copy is still there to publish.
+  const store = tempStore();
+  await store.upsert('renders', [
+    readyRender('r1', { scriptId: 'scr_x', title: 'Why Ancient Roman Concrete Heals Itself' }),
+    readyRender('r2', { scriptId: 'scr_x', title: 'Why Ancient Roman Concrete Heals Itself' }),
+  ]);
+  const provider = batchedProvider(scheduledOk);
+
+  await post({ store, provider, platforms: ['youtube'], limit: 3 });
+
+  assert.equal(provider.calls.length, 1);
+  assert.equal((await store.get('renders', 'r1')).status, 'posted');
+  assert.equal((await store.get('renders', 'r2')).status, 'ready-to-post');
+});
+
+test('a failed attempt is not a live post', async () => {
+  // Matching against every row would retire a video that never went out.
+  const store = tempStore();
+  await store.upsert('posts', [{
+    id: 'p-dead', platform: 'youtube', status: 'schedule-failed', scriptId: 'scr_a',
+    title: 'The Aztec Death Whistle Sound', publishAt: '2026-09-22T15:00:00Z',
+  }]);
+  await store.upsert('renders', [readyRender('r1', { scriptId: 'scr_a', title: 'The Aztec Death Whistle Sound' })]);
+  const provider = batchedProvider(scheduledOk);
+
+  await post({ store, provider, platforms: ['youtube'], limit: 1 });
+  assert.equal(provider.calls.length, 1);
+  assert.equal((await store.get('renders', 'r1')).status, 'posted');
+});
