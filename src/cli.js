@@ -21,7 +21,7 @@ import { config, applyCliOverrides } from './config.js';
 import { run, STAGES } from './machine.js';
 import { drain } from './skills/04-poster.js';
 import { getStore, TABLES } from './lib/store/index.js';
-import { harshMatch } from './lib/newsfilter.js';
+import { harshHit } from './lib/newsfilter.js';
 import { interestScore } from './lib/interest.js';
 import { hasFfmpeg, hasDrawtext, findFont } from './lib/video.js';
 import { ping as ttsPing } from './lib/tts.js';
@@ -187,9 +187,9 @@ async function sweep({ table = 'winners', status = 'winner', to = 'rejected-filt
       ? beats.map((b) => `${b.onScreenText || ''} ${b.voiceover || ''}`).join(' ')
       : '';
     const text = `${r.title || ''} ${r.hook || ''} ${r.caption || ''} ${beatText} ${r.sourceNote || ''}`;
-    const harsh = harshMatch(text);
+    const harsh = harshHit(text);
     const interest = interestScore(text);
-    if (harsh) failures.push({ r, why: `too harsh: ${harsh}` });
+    if (harsh) failures.push({ r, why: `too harsh: ${harsh.word}  ...${harsh.context}...` });
     else if (!scripts && interest.score < 1) {
       failures.push({ r, why: `not interesting: ${interest.score}` });
     }
