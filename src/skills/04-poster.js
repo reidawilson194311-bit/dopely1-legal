@@ -135,6 +135,21 @@ export async function drain({
   return published;
 }
 
+/**
+ * What makes two renders the same video, as far as an audience can tell.
+ *
+ * A script can be rendered more than once - requeued for a fix, or written
+ * twice from two winners that shared an idea - and each render is its own row.
+ * Both keys are checked: the script id catches a re-render of one script, the
+ * title catches two scripts that came out identical, which a viewer would see
+ * as a repost all the same.
+ */
+export const contentKey = (title) =>
+  String(title || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+const keysOf = (row) =>
+  [row.scriptId && `s:${row.scriptId}`, row.title && `t:${contentKey(row.title)}`].filter(Boolean);
+
 /** A hosted URL outlives the runner that rendered the video; a local path does
  * not. Either is enough to publish from. */
 const haveVideo = (render) =>
@@ -195,7 +210,41 @@ export async function post({
     await store.patch(TABLES.RENDERS, r.id, { status: 'needs-rerender' });
   }
 
-  const renders = waiting.filter(haveVideo).slice(0, rate);
+  // Never publish the same video twice to one platform.
+  //
+  // Recovering a week of renders stranded by an empty SubMagic account brought
+  // back two copies each of "How Shazam Recognizes Any Song Instantly" and
+  // "Why Ancient Roman Concrete Heals Itself" - both already scheduled to
+  // YouTube on 09-21. Nothing checked that a render's content was already out,
+  // so a top-up would have reposted both. Render rows are a record of work
+  // done, not of what the audience has seen; this asks the posts table, which
+  // is.
+  const live = new Map(platforms.map((p) => [p, new Set()]));
+  for (const e of history) {
+    if (DEAD_POST_STATUS.has(e.status) || !live.has(e.platform)) continue;
+    for (const k of keysOf(e)) live.get(e.platform).add(k);
+  }
+  const inBatch = new Map(platforms.map((p) => [p, new Set()]));
+  const duePlatforms = new Map();
+  const renders = [];
+  for (const r of waiting.filter(haveVideo)) {
+    const keys = keysOf(r);
+    const due = platforms.filter((p) => !keys.some((k) => live.get(p).has(k)));
+    if (!due.length) {
+      // Already out everywhere it was meant for. Retired so every later run
+      // does not pay to reach the same conclusion.
+      log.warn(`"${r.title}" is already live on ${platforms.join(', ')} - retiring the duplicate`);
+      await store.patch(TABLES.RENDERS, r.id, { status: 'duplicate' });
+      continue;
+    }
+    // A second unposted copy in this same run is only held back, not retired:
+    // if the first fails on its own merits, this one is still there to go.
+    const fresh = due.filter((p) => !keys.some((k) => inBatch.get(p).has(k)));
+    if (!fresh.length || renders.length >= rate) continue;
+    for (const p of fresh) for (const k of keys) inBatch.get(p).add(k);
+    duePlatforms.set(r.id, fresh);
+    renders.push(r);
+  }
   if (!renders.length) {
     log.warn('nothing rendered and waiting - run the designer first');
     return drained;
@@ -234,8 +283,9 @@ export async function post({
   // the machine's decision; how it gets there is the publisher's.
   const planned = [];
   for (const platform of platforms) {
-    const slots = nextSlots(platform, renders.length, takenByPlatform.get(platform) || []);
-    for (const [i, render] of renders.entries()) {
+    const due = renders.filter((r) => duePlatforms.get(r.id).includes(platform));
+    const slots = nextSlots(platform, due.length, takenByPlatform.get(platform) || []);
+    for (const [i, render] of due.entries()) {
       const when = slots[i];
       if (!when) {
         log.warn(`no free ${platform} slot inside ${config.post.horizonDays} days`);
@@ -395,8 +445,11 @@ export async function post({
     // Marking it post-failed is what stranded a week of renders.
     if (!mine.length) continue;
     const ok = mine.filter((s) => s.status !== 'schedule-failed').length;
+    // Measured against the platforms it was due on, not all of them - one
+    // already live elsewhere is not a platform this run failed to reach.
+    const expected = duePlatforms.get(render.id).length;
     await store.patch(TABLES.RENDERS, render.id, {
-      status: ok === platforms.length ? 'posted' : ok > 0 ? 'partially-posted' : 'post-failed',
+      status: ok === expected ? 'posted' : ok > 0 ? 'partially-posted' : 'post-failed',
     });
   }
 
