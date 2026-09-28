@@ -66,6 +66,37 @@ const PATTERN = new RegExp(
 );
 
 /**
+ * Phrasings where a harsh word is doing science, not violence.
+ *
+ * The screen is about violence done to PEOPLE, but its words are not. A sweep
+ * of the held news scripts would have retired three of the best stories on the
+ * desk: "NASA Reveals Ghosts of Five Supernovas" (dead stars), "Hubble Hunts
+ * Reappearing Cosmic Explosion" (a dying star), and "Satellite Tracks Volcano
+ * Awakened by Earthquake" (a volcano that shoots ash). The same words run at
+ * ingest, so stories like these were being dropped from the wire all week
+ * without a trace.
+ *
+ * Deliberately phrase-level and narrow. A blanket rule - "ignore `dead` in a
+ * science story" - would let "five dead as volcano erupts" through, which is
+ * the exact harm the screen exists to stop. Each entry names what the word is
+ * attached to, so a real casualty still reads as one. Where a gap between the
+ * word and its object is allowed, it is only for celestial objects: nothing
+ * with a casualty count is ever "dead at planet".
+ */
+const BENIGN = [
+  // dead / dying / death of a star, and friends
+  /\b(?:dead|dying|died|dies|die|death\s+of\s+(?:a|the))\s+(?:[\w-]+\s+){0,2}?(?:stars?|suns?|galax(?:y|ies)|planets?|moons?|nebulae?|pulsars?|quasars?|white\s+dwarfs?|red\s+giants?|supernovae?)\b/gi,
+  /\b(?:stars?|suns?|galax(?:y|ies)|planets?|stellar)(?:'s)?\s+(?:that\s+)?(?:died|dies|die|dying|death|deaths)\b/gi,
+  // things that shoot out of the ground, or into a camera
+  /\b(?:shoots?|shot|shooting)\s+(?:up|out|into|off|ash|lava|steam|smoke|plumes?|jets?|gas|water|debris|sparks?|photos?|pictures?|images?|video|footage|film|scenes?|stars?)\b/gi,
+  // the most famous killing in science, and a few that are medicine
+  /\bkill(?:ed|s|ing)?\s+(?:off\s+)?(?:the\s+)?(?:dinosaurs?|bacteria|germs|cancer\s+cells?|tumou?rs?|viruses?|weeds?|pests?)\b/gi,
+  // names and terms of art
+  /\bkiller\s+whales?\b/gi,
+  /\b(?:heat\s+death|dead\s+zones?|dead\s+sea|death\s+valley)\b/gi,
+];
+
+/**
  * Does this text describe violence done to a person?
  *
  * Returns the matched word rather than a boolean, so the log can say WHY a
@@ -74,7 +105,9 @@ const PATTERN = new RegExp(
  * could not see why something vanished it cost three misdiagnoses.
  */
 export function harshMatch(text) {
-  const m = PATTERN.exec(String(text || ''));
+  let t = String(text || '');
+  for (const re of BENIGN) t = t.replace(re, ' ');
+  const m = PATTERN.exec(t);
   return m ? m[0].toLowerCase() : null;
 }
 

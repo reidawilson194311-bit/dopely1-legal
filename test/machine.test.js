@@ -1369,3 +1369,34 @@ test('a failed attempt is not a live post', async () => {
   assert.equal(provider.calls.length, 1);
   assert.equal((await store.get('renders', 'r1')).status, 'posted');
 });
+
+// --- the violence screen was eating the best science on the wire ------------
+
+test('dead stars, dying stars and erupting volcanoes are not violence', () => {
+  // A sweep of the held news scripts would have retired three of the best on
+  // the desk - supernova remnants, a dying star, a volcano throwing ash - and
+  // the same words run at ingest, so stories like these were being dropped
+  // from the wire without a trace.
+  for (const t of [
+    'Astronomers found the glowing remains of five dead stars',
+    'A dying star swells into a red giant',
+    'The volcano shoots ash miles into the sky',
+    'the asteroid that killed the dinosaurs',
+    'the death of a star lights up the galaxy',
+    'long-dead massive stars',
+    'a shooting star over the desert',
+    'oxygen-starved dead zones in the gulf',
+  ]) {
+    assert.equal(harshMatch(t), null, t);
+  }
+});
+
+test('the science exemptions do not open a door for real casualties', () => {
+  // The whole reason the exemptions are phrase-level: "ignore dead in a
+  // science story" would wave through the exact thing the screen stops.
+  assert.equal(harshMatch('Five dead as volcano erupts'), 'dead');
+  assert.equal(harshMatch('Volcano eruption kills 12 villagers'), 'kills');
+  assert.equal(harshMatch('two dead at sea after ferry capsizes'), 'dead');
+  assert.equal(harshMatch('Police shot a suspect outside the bar'), 'shot');
+  assert.ok(isTooHarsh('Gunman shoots two at festival'));
+});
