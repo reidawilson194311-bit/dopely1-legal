@@ -1386,6 +1386,9 @@ test('dead stars, dying stars and erupting volcanoes are not violence', () => {
     'long-dead massive stars',
     'a shooting star over the desert',
     'oxygen-starved dead zones in the gulf',
+    // verbatim from the held volcano script
+    'But a joint US-India satellite shoots radar pulses right through smoke and clouds.',
+    'the telescope shoots a laser at the mirror',
   ]) {
     assert.equal(harshMatch(t), null, t);
   }
@@ -1398,6 +1401,8 @@ test('the science exemptions do not open a door for real casualties', () => {
   assert.equal(harshMatch('Volcano eruption kills 12 villagers'), 'kills');
   assert.equal(harshMatch('two dead at sea after ferry capsizes'), 'dead');
   assert.equal(harshMatch('Police shot a suspect outside the bar'), 'shot');
+  assert.equal(harshMatch('the gunman shot two people'), 'gunman');
+  assert.equal(harshMatch('officers shot the driver'), 'shot');
   assert.ok(isTooHarsh('Gunman shoots two at festival'));
 });
 
