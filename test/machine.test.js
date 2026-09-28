@@ -6,7 +6,8 @@ import { normalize, extractHook } from '../src/lib/normalize.js';
 import { overlapRatio, choosePillar, isNewsWinner } from '../src/skills/02-copywriter.js';
 import { NICHE } from '../src/niche.js';
 import { wrapCaption, buildFilterGraph } from '../src/lib/video.js';
-import { composeCaption, drain, DEAD_POST_STATUS } from '../src/skills/04-poster.js';
+import { composeCaption, drain, post, isAccountBlocked, DEAD_POST_STATUS } from '../src/skills/04-poster.js';
+import { HttpError } from '../src/lib/http.js';
 import { buildPlatforms, batched } from '../src/lib/publishers/submagic.js';
 import { wavHeader, pcmRate } from '../src/lib/tts.js';
 import { firstAssetUrl } from '../src/lib/images/higgsfield.js';
@@ -1242,4 +1243,70 @@ test('the sweep screens stored rows, and only the news ones', () => {
   // The scoping is the point, not a detail: "a DEAD simple explanation" would
   // retire a perfectly good evergreen post if the sweep screened everything.
   assert.equal(harshMatch(stored[2].caption), 'dead');
+});
+
+// --- an empty account is not a broken video (the week that published nothing) --
+
+const readyRender = (id, over = {}) => ({
+  id, title: `Video ${id}`, status: 'ready-to-post',
+  videoUrl: `https://example.test/${id}.mp4`,
+  renderedAt: `2026-09-2${id.slice(-1)}T07:00:00Z`,
+  captions: { youtube: 'c' }, hashtags: { youtube: [] },
+  ...over,
+});
+
+function batchedProvider(behaviour) {
+  const calls = [];
+  return {
+    name: 'fake', batched: true, calls,
+    async scheduleBatch(args) {
+      calls.push(args);
+      return behaviour(args, calls.length);
+    },
+  };
+}
+
+const outOfCredits = () =>
+  new HttpError(402, 'Payment Required',
+    '{"error":"INSUFFICIENT_CREDITS","message":"Insufficient API credits"}',
+    'https://api.submagic.co/v1/projects');
+
+test('an account out of credits leaves every video ready-to-post', async () => {
+  // SubMagic answered 402 for a week. Each render the poster tried was marked
+  // post-failed, the poster only reads ready-to-post, and so every one was
+  // stranded - topping the account up would not have brought any of them back.
+  const store = tempStore();
+  await store.upsert('renders', [readyRender('r1'), readyRender('r2'), readyRender('r3')]);
+  const provider = batchedProvider(() => { throw outOfCredits(); });
+
+  await assert.rejects(
+    post({ store, provider, platforms: ['youtube'], limit: 3 }),
+    /refused to publish.*3 video\(s\) left ready-to-post, nothing lost/,
+    'still a failure, so an unattended run says so - but it names the recoverable kind',
+  );
+  assert.equal(provider.calls.length, 1, 'stops at the first refusal - the rest would only be refused too');
+  for (const id of ['r1', 'r2', 'r3']) {
+    assert.equal((await store.get('renders', id)).status, 'ready-to-post', id);
+  }
+  assert.equal((await store.list('posts')).length, 0, 'no failed rows left behind in the schedule');
+});
+
+test('a video rejected on its own merits is still marked failed', async () => {
+  // The other side of the line. Retrying a genuinely broken video on every run
+  // forever would hide it, and hold up the queue behind it.
+  const store = tempStore();
+  await store.upsert('renders', [readyRender('r1')]);
+  const provider = batchedProvider(() => {
+    throw new HttpError(400, 'Bad Request', '{"error":"INVALID_VIDEO"}', 'https://api.submagic.co/v1/projects');
+  });
+
+  await assert.rejects(post({ store, provider, platforms: ['youtube'], limit: 1 }));
+  assert.equal((await store.get('renders', 'r1')).status, 'post-failed');
+});
+
+test('account refusal is read from the body as well as the status', () => {
+  assert.equal(isAccountBlocked(outOfCredits()), true);
+  assert.equal(isAccountBlocked({ status: 400, message: 'x', body: '{"error":"INSUFFICIENT_CREDITS"}' }), true);
+  assert.equal(isAccountBlocked({ status: 400, message: '400 Bad Request - INVALID_VIDEO' }), false);
+  assert.equal(isAccountBlocked(null), false);
 });
