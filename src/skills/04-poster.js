@@ -26,6 +26,29 @@ export const DEAD_POST_STATUS = new Set(['superseded', 'schedule-failed', 'post-
 
 const PUBLISHERS = { submagic, metricool, unipile };
 
+/**
+ * Is this the ACCOUNT refusing, rather than this video?
+ *
+ * An empty credit balance is not a property of any one video, and treating it
+ * as one cost a week of output. Every render the poster tried while SubMagic
+ * answered 402 INSUFFICIENT_CREDITS was marked post-failed - and the poster
+ * only ever reads ready-to-post, so each of those videos was stranded for good.
+ * The daily run went on rendering four more a day, which met the same wall
+ * and were stranded in turn. Nothing published from 09-21 to 09-28, and
+ * topping up alone would not have brought any of them back.
+ *
+ * Keyed on the status AND the body: 402 is the honest code for this, but a
+ * publisher that reports billing trouble under another status still says so
+ * in the body, and missing it means stranding videos again.
+ */
+export function isAccountBlocked(err) {
+  if (!err) return false;
+  if (err.status === 402) return true;
+  return /INSUFFICIENT_CREDITS|insufficient (api )?credits|payment required/i.test(
+    `${err.message || ''} ${err.body || ''}`,
+  );
+}
+
 /** Trim a caption to the platform's limit and append its hashtags. */
 export function composeCaption(render, platform) {
   const LIMITS = { instagram: 2200, tiktok: 2200, youtube: 5000 };
@@ -117,12 +140,18 @@ export async function drain({
 const haveVideo = (render) =>
   Boolean(render.videoUrl) || Boolean(render.videoPath && fs.existsSync(render.videoPath));
 
-export async function post({ limit, platforms = config.post.platforms } = {}) {
+export async function post({
+  limit,
+  platforms = config.post.platforms,
+  store = getStore(),
+  // Injectable for the same reason drain's is: the failure this guards against
+  // is a live account running dry, which no test should have to reproduce.
+  provider = config.dryRun ? null : PUBLISHERS[config.post.provider],
+} = {}) {
   log.banner('SKILL 04 / THE POSTER', 'It posts itself.');
-  const store = getStore();
 
   // Publish anything we are already holding before taking on more.
-  const drained = await drain({ store, platforms });
+  const drained = await drain({ store, platforms, provider });
 
   // The ramp is measured from the first post this machine ever scheduled, so
   // it survives restarts and gaps. An explicit --limit always wins.
@@ -173,7 +202,6 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
   }
   log.info(`INPUT: ${renders.length} finished posts`);
 
-  const provider = config.dryRun ? null : PUBLISHERS[config.post.provider];
   if (!config.dryRun && !provider) {
     log.warn(`PUBLISH_PROVIDER=${config.post.provider} - scheduling locally only, nothing will go live`);
   }
@@ -247,6 +275,11 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
   const announce = (row) =>
     log.info(`  ${row.platform.padEnd(9)} ${row.publishAtLocal} ${config.post.timezone}  "${row.title}"`);
 
+  // Set when the account itself refuses. Everything from that point on is left
+  // exactly as it was - ready-to-post, no failed rows - so the next run after
+  // a top-up resumes where this one stopped instead of starting from nothing.
+  let blocked = null;
+
   if (provider?.batched) {
     // One upload, one project, every platform in a single call. Three separate
     // projects for one video would triple the account's usage to stagger the
@@ -290,6 +323,10 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
           announce(row);
         }
       } catch (err) {
+        if (isAccountBlocked(err)) {
+          blocked = err;
+          break;
+        }
         for (const { row } of group) {
           row.status = 'schedule-failed';
           row.error = err.message;
@@ -335,6 +372,10 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
         scheduled.push(row);
         announce(row);
       } catch (err) {
+        if (isAccountBlocked(err)) {
+          blocked = err;
+          break;
+        }
         row.status = 'schedule-failed';
         row.error = err.message;
         scheduled.push(row);
@@ -349,6 +390,10 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
   // A render is only "posted" once every platform it was meant for took it.
   for (const render of renders) {
     const mine = scheduled.filter((s) => s.renderId === render.id);
+    // Never attempted - stopped by the account, or no free slot yet. Neither
+    // says anything about the video, so it keeps its place in the queue.
+    // Marking it post-failed is what stranded a week of renders.
+    if (!mine.length) continue;
     const ok = mine.filter((s) => s.status !== 'schedule-failed').length;
     await store.patch(TABLES.RENDERS, render.id, {
       status: ok === platforms.length ? 'posted' : ok > 0 ? 'partially-posted' : 'post-failed',
@@ -357,6 +402,18 @@ export async function post({ limit, platforms = config.post.platforms } = {}) {
 
   const ok = scheduled.filter((s) => s.status !== 'schedule-failed').length;
   log.info(`OUTPUT: ${ok}/${scheduled.length} scheduled across ${platforms.join(', ')}`);
+
+  if (blocked) {
+    const done = new Set(scheduled.map((s) => s.renderId));
+    const waitingNow = renders.filter((r) => !done.has(r.id)).length;
+    // Still a failure - an unattended machine that cannot publish has to say
+    // so - but a recoverable one, and the message says which kind.
+    throw new Error(
+      `the ${provider.name} account refused to publish (${blocked.message}). ` +
+        `${waitingNow} video(s) left ready-to-post, nothing lost - ` +
+        'the next run resumes once the account can pay',
+    );
+  }
   reportBatch(log, { attempted: scheduled.length, succeeded: ok, errors });
   return [...drained, ...scheduled];
 }
