@@ -20,7 +20,7 @@ import { nextSlots, zonedTimeToUtc } from '../src/lib/schedule.js';
 import { placeholderPNG, buildPrompt } from '../src/lib/nanobanana.js';
 import { estimateDuration } from '../src/lib/tts.js';
 import { reportBatch } from '../src/lib/batch.js';
-import { harshMatch, isTooHarsh } from '../src/lib/newsfilter.js';
+import { harshMatch, harshHit, isTooHarsh } from '../src/lib/newsfilter.js';
 import { interestScore } from '../src/lib/interest.js';
 import { rampedRate } from '../src/lib/ramp.js';
 import { toGeminiSchema, parseJSON, describeSchema, DeclinedError } from '../src/lib/writer/schema.js';
@@ -1399,4 +1399,13 @@ test('the science exemptions do not open a door for real casualties', () => {
   assert.equal(harshMatch('two dead at sea after ferry capsizes'), 'dead');
   assert.equal(harshMatch('Police shot a suspect outside the bar'), 'shot');
   assert.ok(isTooHarsh('Gunman shoots two at festival'));
+});
+
+test('a harsh match carries the sentence it came from', () => {
+  // "too harsh: shoots" said nothing about whether a volcano or a person was
+  // shooting; tuning the exemptions from the word alone meant guessing.
+  const hit = harshHit('Satellite images show the volcano shoots a column of hot rock skyward.');
+  assert.equal(hit.word, 'shoots');
+  assert.match(hit.context, /volcano shoots a column/);
+  assert.equal(harshHit('A calm day at the observatory.'), null);
 });

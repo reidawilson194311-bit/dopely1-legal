@@ -105,10 +105,25 @@ const BENIGN = [
  * could not see why something vanished it cost three misdiagnoses.
  */
 export function harshMatch(text) {
+  return harshHit(text)?.word ?? null;
+}
+
+/**
+ * The match and the words around it.
+ *
+ * The word alone was not enough to act on: a sweep reported "too harsh:
+ * shoots" for a volcano story, and nothing said whether a volcano or a person
+ * was doing the shooting. Tuning BENIGN from the word alone means guessing at
+ * the phrasing; this shows it.
+ */
+export function harshHit(text) {
   let t = String(text || '');
   for (const re of BENIGN) t = t.replace(re, ' ');
   const m = PATTERN.exec(t);
-  return m ? m[0].toLowerCase() : null;
+  if (!m) return null;
+  const from = Math.max(0, m.index - 45);
+  const to = Math.min(t.length, m.index + m[0].length + 45);
+  return { word: m[0].toLowerCase(), context: t.slice(from, to).replace(/\s+/g, ' ').trim() };
 }
 
 /** Convenience predicate for the common case. */
