@@ -89,6 +89,11 @@ const BENIGN = [
   /\b(?:stars?|suns?|galax(?:y|ies)|planets?|stellar)(?:'s)?\s+(?:that\s+)?(?:died|dies|die|dying|death|deaths)\b/gi,
   // things that shoot out of the ground, or into a camera
   /\b(?:shoots?|shot|shooting)\s+(?:up|out|into|off|ash|lava|steam|smoke|plumes?|jets?|gas|water|debris|sparks?|photos?|pictures?|images?|video|footage|film|scenes?|stars?)\b/gi,
+  // instruments firing radiation, not weapons firing at people. Found by the
+  // sweep's own context line rather than guessed: "a joint US-India satellite
+  // shoots radar pulses right through smoke and clouds". The first guess -
+  // that a volcano was doing the shooting - was wrong.
+  /\b(?:shoots?|shot|shooting)\s+(?:(?:a|an|the)\s+)?(?:[\w-]+\s+)?(?:radar|pulses?|lasers?|beams?|signals?|light|x-?rays?|particles?|neutrinos?|photons?|electrons?|microwaves?)\b/gi,
   // the most famous killing in science, and a few that are medicine
   /\bkill(?:ed|s|ing)?\s+(?:off\s+)?(?:the\s+)?(?:dinosaurs?|bacteria|germs|cancer\s+cells?|tumou?rs?|viruses?|weeds?|pests?)\b/gi,
   // names and terms of art
